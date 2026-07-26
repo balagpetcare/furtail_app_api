@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "name": "user_notification_prefs",
+      "table": "userNotificationPrefs",
+      "cursorColumn": "userId",
+      "keyColumns": ["userId"],
+      "columns": ["userId", "allowEmail", "allowSms", "updatedAt"],
+      "requiredColumns": ["userId"],
+      "description": "Per-user notification delivery preferences"
+    },
+    {
+      "name": "user_device_tokens",
+      "table": "userDeviceToken",
+      "cursorColumn": "id",
+      "keyColumns": ["id"],
+      "columns": [
+        "id",
+        "userId",
+        "token",
+        "platform",
+        "provider",
+        "isActive",
+        "createdAt",
+        "updatedAt",
+        "lastSeenAt"
+      ],
+      "requiredColumns": ["id", "userId", "token"],
+      "description": "Registered push tokens, deduplicated by stable id"
+    },
+    {
+      "name": "notifications",
+      "table": "notification",
+      "cursorColumn": "id",
+      "keyColumns": ["id"],
+      "columns": [
+        "id",
+        "recipientId",
+        "type",
+        "title",
+        "body",
+        "actorId",
+        "actorName",
+        "actorAvatarUrl",
+        "deepLink",
+        "createdAt",
+        "readAt",
+        "deliveryStatus",
+        "deliveryAttempts",
+        "lastDeliveryError",
+        "sourceKey"
+      ],
+      "requiredColumns": ["id", "recipientId", "type", "title", "body", "createdAt"],
+      "description": "In-app notification timeline and delivery-visible state"
+    },
+    {
+      "name": "notification_reads",
+      "table": "notificationRead",
+      "cursorColumn": "notificationId",
+      "keyColumns": ["notificationId", "userId"],
+      "columns": ["notificationId", "userId", "readAt"],
+      "requiredColumns": ["notificationId", "userId"],
+      "description": "Per-user read receipts for notification reconciliation"
+    },
+    {
+      "name": "reports",
+      "table": "report",
+      "cursorColumn": "id",
+      "keyColumns": ["id"],
+      "columns": [
+        "id",
+        "reporterId",
+        "type",
+        "targetId",
+        "reasonCode",
+        "details",
+        "createdAt",
+        "status",
+        "sourceKey"
+      ],
+      "requiredColumns": ["id", "reporterId", "type", "targetId", "reasonCode", "createdAt"],
+      "description": "User abuse reports and moderation trail"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "projectName": "furtail_app_api",
+  "targetPath": "D:\\wpa\\furtail\\furtail_app_api",
+  "legacyReferencePath": "D:\\wpa\\furtail\\furtail_api",
+  "flutterAppPath": "D:\\wpa\\furtail\\furtail_app",
+  "relationship": "parallel-migration-then-replacement",
+  "legacyPort": 7200,
+  "newPort": 7300,
+  "packageManager": "npm",
+  "centralAuthAudience": "furtail-mobile",
+  "productionCutoverCompleted": false,
+  "databaseOperationsAllowed": false,
+  "createdAt": "2026-07-26T09:09:01Z"
+}

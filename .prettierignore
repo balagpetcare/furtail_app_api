@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+package-lock.json
+
+# Content documents from earlier migration steps — not source code;
+# reformatting them is not part of this step's scope.
+docs/
+migration-reports/
+README.md

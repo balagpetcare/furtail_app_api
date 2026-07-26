@@ -1,0 +1,521 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProfileVisibility {
+  PUBLIC
+  FOLLOWERS_ONLY
+  PRIVATE
+}
+
+enum PostPrivacy {
+  PUBLIC
+  FOLLOWERS_ONLY
+  PRIVATE
+}
+
+enum PostType {
+  TEXT
+  IMAGE
+  VIDEO
+  REEL
+}
+
+enum PostCategory {
+  GENERAL
+  FUNDRAISING
+}
+
+enum PostStatus {
+  ACTIVE
+  DELETED
+}
+
+enum CommentStatus {
+  ACTIVE
+  DELETED
+}
+
+enum MediaStatus {
+  READY
+  PROCESSING
+  FAILED
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELED
+}
+
+model User {
+  id                     Int               @id @default(autoincrement())
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  profile                UserProfile?
+  wallet                 Wallet?
+  uploadedMedia          Media[]           @relation("MediaOwner")
+  authoredPosts          Post[]            @relation("PostAuthor")
+  authoredComments       PostComment[]     @relation("CommentAuthor")
+  postLikes              PostLike[]        @relation("PostLikedBy")
+  postBookmarks          PostBookmark[]    @relation("PostBookmarkedBy")
+  postViews              PostView[]        @relation("PostViewedBy")
+  postShares             PostShare[]       @relation("PostSharedBy")
+  commentLikes           PostCommentLike[] @relation("CommentLikedBy")
+  followers              UserFollow[]      @relation("UserFollowers")
+  following              UserFollow[]      @relation("UserFollowing")
+  profileLikesReceived   UserProfileLike[] @relation("ProfileLikeTarget")
+  profileLikesGiven      UserProfileLike[] @relation("ProfileLikeActor")
+  blocksGiven            UserBlock[]       @relation("UserBlocker")
+  blocksReceived         UserBlock[]       @relation("UserBlocked")
+  friendRequestsSent     FriendRequest[]   @relation("FriendRequestSender")
+  friendRequestsReceived FriendRequest[]   @relation("FriendRequestRecipient")
+}
+
+model Wallet {
+  userId  Int     @id
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  points  Int     @default(0)
+  balance Decimal @db.Decimal(18, 2)
+  tier    String?
+}
+
+model UserProfile {
+  userId          Int               @id
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  username        String            @unique
+  displayName     String
+  bio             String?
+  visibility      ProfileVisibility @default(PUBLIC)
+  showEmail       Boolean           @default(true)
+  showPhone       Boolean           @default(false)
+  avatarMediaId   Int?
+  avatarMedia     Media?            @relation("UserProfileAvatar", fields: [avatarMediaId], references: [id], onDelete: SetNull)
+  coverMediaId    Int?
+  coverMedia      Media?            @relation("UserProfileCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  education       String?
+  placeLive       String?
+  fansAndFriends  String?
+  from            String?
+  profileType     String?
+  workStatus      String?
+  religiousStatus String?
+  gender          String?
+  birthdate       DateTime?
+  maritalStatus   String?
+  isLocked        Boolean           @default(false)
+
+  @@index([visibility])
+  @@index([displayName])
+}
+
+model Media {
+  id                 Int           @id @default(autoincrement())
+  ownerUserId        Int
+  ownerUser          User          @relation("MediaOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  filename           String
+  mimetype           String
+  size               Int
+  storageKey         String        @unique
+  url                String        @unique
+  thumbnailUrl       String?
+  hlsUrl             String?
+  status             MediaStatus   @default(READY)
+  processingError    String?
+  createdAt          DateTime      @default(now())
+  avatarProfiles     UserProfile[] @relation("UserProfileAvatar")
+  coverProfiles      UserProfile[] @relation("UserProfileCover")
+  postMedia          PostMedia[]   @relation("PostMediaAsset")
+  commentAttachments PostComment[] @relation("CommentAttachment")
+
+  @@index([ownerUserId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Post {
+  id                    Int            @id @default(autoincrement())
+  authorId              Int
+  author                User           @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  type                  PostType       @default(TEXT)
+  category              PostCategory   @default(GENERAL)
+  caption               String?
+  context               String?
+  privacy               PostPrivacy    @default(PUBLIC)
+  backgroundStyle       String?
+  postType              String?
+  lostPetName           String?
+  lostPetLocation       String?
+  lostPetContactVisible Boolean        @default(false)
+  locationTag           String?
+  feelingId             String?
+  feelingLabel          String?
+  feelingEmoji          String?
+  activityId            String?
+  activityLabel         String?
+  activityEmoji         String?
+  songTitle             String?
+  songArtist            String?
+  songStartMs           Int?
+  songDurationMs        Int?
+  fundraisingCampaignId Int?
+  shareCount            Int            @default(0)
+  viewCount             Int            @default(0)
+  status                PostStatus     @default(ACTIVE)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  media                 PostMedia[]
+  likes                 PostLike[]
+  bookmarks             PostBookmark[]
+  views                 PostView[]
+  comments              PostComment[]
+  shares                PostShare[]
+
+  @@index([authorId, createdAt])
+  @@index([privacy, status, createdAt])
+  @@index([category, type, createdAt])
+}
+
+model PostMedia {
+  id       Int   @id @default(autoincrement())
+  postId   Int
+  post     Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  mediaId  Int
+  media    Media @relation("PostMediaAsset", fields: [mediaId], references: [id], onDelete: Cascade)
+  position Int   @default(0)
+
+  @@unique([postId, mediaId])
+  @@index([postId, position])
+}
+
+model PostLike {
+  id        Int      @id @default(autoincrement())
+  postId    Int
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User     @relation("PostLikedBy", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([userId, createdAt])
+}
+
+model PostBookmark {
+  id        Int      @id @default(autoincrement())
+  postId    Int
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User     @relation("PostBookmarkedBy", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([userId, createdAt])
+}
+
+model PostView {
+  id           Int      @id @default(autoincrement())
+  postId       Int
+  post         Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  viewerUserId Int
+  viewer       User     @relation("PostViewedBy", fields: [viewerUserId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@unique([postId, viewerUserId])
+  @@index([viewerUserId, createdAt])
+}
+
+model PostShare {
+  id          Int      @id @default(autoincrement())
+  postId      Int
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  actorUserId Int
+  actor       User     @relation("PostSharedBy", fields: [actorUserId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@index([postId, createdAt])
+}
+
+model PostComment {
+  id                Int               @id @default(autoincrement())
+  postId            Int
+  post              Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId          Int
+  author            User              @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  parentId          Int?
+  parent            PostComment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies           PostComment[]     @relation("CommentReplies")
+  text              String
+  isEdited          Boolean           @default(false)
+  attachmentMediaId Int?
+  attachmentMedia   Media?            @relation("CommentAttachment", fields: [attachmentMediaId], references: [id], onDelete: SetNull)
+  status            CommentStatus     @default(ACTIVE)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  likes             PostCommentLike[]
+
+  @@index([postId, parentId, createdAt])
+  @@index([authorId, createdAt])
+}
+
+model PostCommentLike {
+  id        Int         @id @default(autoincrement())
+  commentId Int
+  comment   PostComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User        @relation("CommentLikedBy", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@unique([commentId, userId])
+  @@index([userId, createdAt])
+}
+
+model UserFollow {
+  id          Int      @id @default(autoincrement())
+  followerId  Int
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId Int
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followingId, createdAt])
+}
+
+model UserProfileLike {
+  id            Int      @id @default(autoincrement())
+  targetUserId  Int
+  targetUser    User     @relation("ProfileLikeTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  likedByUserId Int
+  likedByUser   User     @relation("ProfileLikeActor", fields: [likedByUserId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+
+  @@unique([targetUserId, likedByUserId])
+  @@index([likedByUserId, createdAt])
+}
+
+model UserBlock {
+  id            Int      @id @default(autoincrement())
+  blockerId     Int
+  blocker       User     @relation("UserBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedUserId Int
+  blockedUser   User     @relation("UserBlocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+
+  @@unique([blockerId, blockedUserId])
+  @@index([blockedUserId, createdAt])
+}
+
+model FriendRequest {
+  id         Int                 @id @default(autoincrement())
+  fromUserId Int
+  fromUser   User                @relation("FriendRequestSender", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUserId   Int
+  toUser     User                @relation("FriendRequestRecipient", fields: [toUserId], references: [id], onDelete: Cascade)
+  status     FriendRequestStatus @default(PENDING)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@index([fromUserId, toUserId, status])
+  @@index([toUserId, status])
+}
+
+// ============================================================================
+// LOCATION REFERENCE DATA
+// Bangladesh Administrative Hierarchy (5 levels: Division -> District -> Upazila -> Union -> Area)
+// ============================================================================
+
+model BdDivision {
+  id        Int          @id @default(autoincrement())
+  code      String       @unique
+  nameEn    String
+  nameBn    String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  districts BdDistrict[]
+
+  @@map("bd_divisions")
+}
+
+model BdDistrict {
+  id         Int         @id @default(autoincrement())
+  code       String      @unique
+  nameEn     String
+  nameBn     String?
+  divisionId Int
+  latitude   Decimal?    @db.Decimal(10, 8)
+  longitude  Decimal?    @db.Decimal(11, 8)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  division   BdDivision  @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  upazilas   BdUpazila[]
+  areas      BdArea[]    @relation("BdDistrictAreas")
+
+  @@index([divisionId])
+  @@map("bd_districts")
+}
+
+model BdUpazila {
+  id         Int        @id @default(autoincrement())
+  code       String     @unique
+  nameEn     String
+  nameBn     String?
+  districtId Int
+  latitude   Decimal?   @db.Decimal(10, 8)
+  longitude  Decimal?   @db.Decimal(11, 8)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  district   BdDistrict @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  unions     BdUnion[]
+  areas      BdArea[]
+
+  @@index([districtId])
+  @@map("bd_upazilas")
+}
+
+model BdUnion {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique
+  nameEn    String
+  nameBn    String?
+  upazilaId Int
+  latitude  Decimal?  @db.Decimal(10, 8)
+  longitude Decimal?  @db.Decimal(11, 8)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  upazila   BdUpazila @relation(fields: [upazilaId], references: [id], onDelete: Cascade)
+  areas     BdArea[]
+
+  @@index([upazilaId])
+  @@map("bd_unions")
+}
+
+model BdArea {
+  id         Int         @id @default(autoincrement())
+  code       String      @unique
+  nameEn     String
+  nameBn     String?
+  type       String // "UNION", "AREA", "WARD", "WARD_NO", etc.
+  unionId    Int?
+  upazilaId  Int?
+  districtId Int?
+  parentId   Int?
+  latitude   Decimal?    @db.Decimal(10, 8)
+  longitude  Decimal?    @db.Decimal(11, 8)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  union      BdUnion?    @relation(fields: [unionId], references: [id], onDelete: SetNull)
+  upazila    BdUpazila?  @relation(fields: [upazilaId], references: [id], onDelete: SetNull)
+  district   BdDistrict? @relation("BdDistrictAreas", fields: [districtId], references: [id], onDelete: SetNull)
+  parent     BdArea?     @relation("BdAreaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children   BdArea[]    @relation("BdAreaHierarchy")
+
+  @@index([unionId])
+  @@index([upazilaId])
+  @@index([districtId])
+  @@index([type])
+  @@map("bd_areas")
+}
+
+// ============================================================================
+// ANIMAL REFERENCE DATA
+// Animal taxonomy: Category -> Type -> Breed
+// ============================================================================
+
+model AnimalCategory {
+  id           Int          @id @default(autoincrement())
+  code         String       @unique
+  name         String
+  displayOrder Int          @default(0)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  animalTypes  AnimalType[]
+
+  @@map("animal_categories")
+}
+
+model AnimalType {
+  id             Int             @id @default(autoincrement())
+  name           String          @unique
+  categoryId     Int?
+  code           String?         @unique
+  scientificName String?         @db.VarChar(128)
+  icon           String?         @db.VarChar(64)
+  displayOrder   Int             @default(0)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  category       AnimalCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  breeds         Breed[]
+
+  @@index([categoryId])
+  @@map("animal_types")
+}
+
+model AnimalSize {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique
+  name         String
+  minWeightKg  Float?
+  maxWeightKg  Float?
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  breeds       Breed[]
+
+  @@map("animal_sizes")
+}
+
+model AnimalColor {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique
+  name         String
+  hexPreview   String?  @db.VarChar(16)
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("animal_colors")
+}
+
+model CoatPattern {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique
+  name         String
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("coat_patterns")
+}
+
+model Breed {
+  id            Int         @id @default(autoincrement())
+  name          String
+  animalTypeId  Int
+  code          String?     @db.VarChar(64)
+  aliasNames    Json?
+  originCountry String?     @db.VarChar(64)
+  defaultSizeId Int?
+  isMixed       Boolean     @default(false)
+  isOther       Boolean     @default(false)
+  displayOrder  Int         @default(0)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  animalType    AnimalType  @relation(fields: [animalTypeId], references: [id], onDelete: Cascade)
+  defaultSize   AnimalSize? @relation(fields: [defaultSizeId], references: [id], onDelete: SetNull)
+
+  @@unique([name, animalTypeId])
+  @@index([animalTypeId])
+  @@index([defaultSizeId])
+  @@map("breeds")
+}
