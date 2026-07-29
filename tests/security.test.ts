@@ -154,7 +154,7 @@ describe('CentralAuthJwtVerifier', () => {
     });
 
     await expect(verifierWithKey().verifyAccessToken(token)).rejects.toMatchObject({
-      code: 'AUTHENTICATION_INVALID',
+      code: 'TOKEN_AUDIENCE_INVALID',
     });
   });
 
@@ -168,8 +168,10 @@ describe('CentralAuthJwtVerifier', () => {
       client_id: clientId,
     });
 
+    // Wire value stays `CENTRAL_TOKEN_EXPIRED` — Flutter's AuthInterceptor
+    // keys its single-flight refresh-and-retry flow off this exact string.
     await expect(verifierWithKey().verifyAccessToken(token)).rejects.toMatchObject({
-      code: 'AUTHENTICATION_INVALID',
+      code: 'CENTRAL_TOKEN_EXPIRED',
     });
   });
 });

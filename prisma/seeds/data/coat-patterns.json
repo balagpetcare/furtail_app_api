@@ -1,0 +1,58 @@
+[
+  {
+    "code": "SOLID",
+    "name": "Solid",
+    "displayOrder": 1,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "SPOTTED",
+    "name": "Spotted",
+    "displayOrder": 2,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "STRIPED",
+    "name": "Striped",
+    "displayOrder": 3,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "PATCHED",
+    "name": "Patched",
+    "displayOrder": 4,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BRINDLE",
+    "name": "Brindle",
+    "displayOrder": 5,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "MERLE",
+    "name": "Merle",
+    "displayOrder": 6,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "TABBY",
+    "name": "Tabby",
+    "displayOrder": 7,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+]

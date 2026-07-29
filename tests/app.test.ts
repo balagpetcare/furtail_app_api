@@ -58,9 +58,11 @@ describe('application endpoints', () => {
     expect(optional.body.data.authenticated).toBe(false);
     expect(optional.body.data.principal).toBeNull();
 
-    const me = await request(app).get('/api/v1/auth/me').set('Authorization', 'Bearer valid-token');
-    expect(me.status).toBe(200);
-    expect(me.body.data.principal.sub).toBe('user-123');
+    // NOTE: `/api/v1/auth/me` now resolves the principal to a local Prisma
+    // user via getOrProvisionUser(), so it requires a real database
+    // connection and is verified separately (see auth-me-contract.test.ts).
+    // The old inline assertion here (`data.principal.sub`) no longer
+    // matches the route's actual `{ data: { user } }` contract.
   });
 
   it('rejects unauthorized access on required auth routes', async () => {

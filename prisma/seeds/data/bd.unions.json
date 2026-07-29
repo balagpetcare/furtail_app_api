@@ -1,0 +1,23 @@
+[
+  {
+    "code": "UNI-SAVAR-01",
+    "upazilaCode": "UPA-365",
+    "nameEn": "Aminbazar",
+    "nameBn": "আমিনবাজার",
+    "sortOrder": 1
+  },
+  {
+    "code": "UNI-SAVAR-02",
+    "upazilaCode": "UPA-365",
+    "nameEn": "Bank Town",
+    "nameBn": "ব্যাংক টাউন",
+    "sortOrder": 2
+  },
+  {
+    "code": "UNI-SAVAR-03",
+    "upazilaCode": "UPA-365",
+    "nameEn": "Dhamsona",
+    "nameBn": "ধামসোনা",
+    "sortOrder": 3
+  }
+]

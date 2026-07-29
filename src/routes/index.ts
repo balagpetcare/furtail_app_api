@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 
 import type { AuthRoutesDeps } from './auth.routes';
 import { authRoutes } from './auth.routes';
@@ -11,13 +11,19 @@ import type { NotificationsRoutesDeps } from './notifications.routes';
 import { petRoutes } from './pets.routes';
 import type { PetRoutesDeps } from './pets.routes';
 import { fundraisingRoutes } from './fundraising.routes';
+import { adoptionRoutes } from './adoption.routes';
+import type { AdoptionRoutesDeps } from './adoption.routes';
 import type { FundraisingRoutesDeps } from './fundraising.routes';
 import { reportsRoutes } from './reports.routes';
 import type { ReportsRoutesDeps } from './reports.routes';
+import { locationsRoutes } from './locations.routes';
+import type { LocationRoutesDeps } from './locations.routes';
+import { animalTaxonomyRoutes } from './animal-taxonomy.routes';
+import type { AnimalTaxonomyRoutesDeps } from './animal-taxonomy.routes';
 
 /**
  * Root route aggregator. Business-module routers (posts, profile, pets,
- * etc.) are intentionally not registered here yet — this foundation step
+ * etc.) are intentionally not registered here yet â€” this foundation step
  * only wires up health/readiness/version endpoints.
  */
 export interface RootRouterDeps
@@ -28,7 +34,10 @@ export interface RootRouterDeps
     NotificationsRoutesDeps,
     ReportsRoutesDeps,
     PetRoutesDeps,
-    FundraisingRoutesDeps {}
+    FundraisingRoutesDeps,
+    AdoptionRoutesDeps,
+    LocationRoutesDeps,
+    AnimalTaxonomyRoutesDeps {}
 
 export function rootRouter(deps: RootRouterDeps): Router {
   const router = Router();
@@ -39,5 +48,8 @@ export function rootRouter(deps: RootRouterDeps): Router {
   router.use(reportsRoutes(deps));
   router.use(petRoutes(deps));
   router.use(fundraisingRoutes(deps));
+  router.use(adoptionRoutes(deps));
+  router.use(locationsRoutes(deps));
+  router.use(animalTaxonomyRoutes(deps));
   return router;
 }

@@ -27,7 +27,7 @@ describe('GET /ready', () => {
       status: 'ready',
       dependencies: {
         database: {
-          status: 'NOT_CONFIGURED',
+          status: 'READY',
         },
         redis: 'NOT_CONFIGURED',
         queue: 'NOT_CONFIGURED',

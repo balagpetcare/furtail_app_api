@@ -33,13 +33,14 @@ export function authRoutes(deps: AuthRoutesDeps): Router {
     '/api/v1/auth/me',
     required,
     asyncHandler(async (req, res) => {
-      sendSuccess(
-        res,
-        {
-          principal: req.principal,
-        },
-        { requestId: req.requestId, correlationId: req.correlationId },
-      );
+      try {
+        const { getOrProvisionUser } = await import('../modules/auth/auth.service');
+        const user = await getOrProvisionUser(req.principal!);
+        sendSuccess(res, { user }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        console.error('[auth.routes] Error in /auth/me:', error);
+        throw error;
+      }
     }),
   );
 

@@ -1,3 +1,7 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join, normalize, relative, sep } from 'node:path';
+import { randomUUID } from 'node:crypto';
+
 export interface UploadedMediaInput {
   ownerUserId: number;
   filename: string;
@@ -20,19 +24,60 @@ export interface MediaStorageAdapter {
   upload(input: UploadedMediaInput): Promise<StoredMediaDescriptor>;
 }
 
+const DEFAULT_MEDIA_ROOT = join(process.cwd(), '.media-store');
+const MEDIA_PUBLIC_PREFIX = '/api/v1/media';
+
+function safeFilename(filename: string): string {
+  const clean = filename.trim() || 'upload.bin';
+  return Array.from(clean)
+    .map((char) => {
+      const code = char.charCodeAt(0);
+      if (code < 32 || '[<>:"/\\|?*]'.includes(char)) {
+        return '_';
+      }
+      return char;
+    })
+    .join('');
+}
+
+function buildStorageKey(ownerUserId: number, filename: string): string {
+  const safeName = encodeURIComponent(safeFilename(filename));
+  return `${ownerUserId}/${Date.now()}-${randomUUID().slice(0, 12)}/${safeName}`;
+}
+
+function resolveMediaPath(rootDir: string, storageKey: string): string {
+  const normalizedRoot = normalize(rootDir);
+  const normalizedPath = normalize(join(normalizedRoot, storageKey));
+  const rel = relative(normalizedRoot, normalizedPath);
+  if (rel.startsWith('..') || rel.includes(`..${sep}`)) {
+    throw new Error('Invalid media storage key');
+  }
+  return normalizedPath;
+}
+
+export function resolveStoredMediaPath(storageKey: string, rootDir = DEFAULT_MEDIA_ROOT): string {
+  return resolveMediaPath(rootDir, storageKey);
+}
+
+export function buildMediaPublicUrl(storageKey: string): string {
+  return `${MEDIA_PUBLIC_PREFIX}/${storageKey}`;
+}
+
 export class InMemoryMediaStorageAdapter implements MediaStorageAdapter {
-  private nextId = 1;
+  constructor(private readonly rootDir: string = DEFAULT_MEDIA_ROOT) {}
 
   async upload(input: UploadedMediaInput): Promise<StoredMediaDescriptor> {
-    const id = this.nextId++;
-    const safeName = encodeURIComponent(input.filename || `upload-${id}`);
-    const publicUrl = `memory://media/${input.ownerUserId}/${id}/${safeName}`;
+    const storageKey = buildStorageKey(input.ownerUserId, input.filename);
+    const publicUrl = buildMediaPublicUrl(storageKey);
+    const filePath = resolveMediaPath(this.rootDir, storageKey);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, input.buffer);
 
     return {
-      storageKey: `memory:${input.ownerUserId}:${id}`,
+      storageKey,
       publicUrl,
       thumbnailUrl: input.mimetype.startsWith('image/') ? publicUrl : null,
-      hlsUrl: input.mimetype.startsWith('video/') ? `${publicUrl}/stream.m3u8` : null,
+      hlsUrl: input.mimetype.startsWith('video/') ? publicUrl : null,
       status: 'READY',
       processingError: null,
     };

@@ -1,0 +1,58 @@
+[
+  {
+    "code": "BD-DH",
+    "nameEn": "Dhaka",
+    "nameBn": "ঢাকা",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-CH",
+    "nameEn": "Chittagong",
+    "nameBn": "চট্টগ্রাম",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-KH",
+    "nameEn": "Khulna",
+    "nameBn": "খুলনা",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-RJ",
+    "nameEn": "Rajshahi",
+    "nameBn": "রাজশাহী",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-SY",
+    "nameEn": "Sylhet",
+    "nameBn": "সিলেট",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-BR",
+    "nameEn": "Barisal",
+    "nameBn": "বরিশাল",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-RN",
+    "nameEn": "Rangpur",
+    "nameBn": "রংপুর",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-MY",
+    "nameEn": "Mymensingh",
+    "nameBn": "ময়মনসিংহ",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+]

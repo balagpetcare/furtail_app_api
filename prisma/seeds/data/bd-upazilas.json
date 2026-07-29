@@ -1,0 +1,122 @@
+[
+  {
+    "code": "BD-DH-DA-DA",
+    "nameEn": "Dhaka Sadar",
+    "nameBn": "ঢাকা সদর",
+    "districtId": 1,
+    "latitude": 23.7104,
+    "longitude": 90.4073,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-DH-DA-AD",
+    "nameEn": "Adabor",
+    "nameBn": "আদাবর",
+    "districtId": 1,
+    "latitude": 23.8,
+    "longitude": 90.35,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-DH-GA-GA",
+    "nameEn": "Gazipur Sadar",
+    "nameBn": "গাজীপুর সদর",
+    "districtId": 2,
+    "latitude": 24.0041,
+    "longitude": 90.4256,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-DH-NR-NR",
+    "nameEn": "Narayanganj Sadar",
+    "nameBn": "নারায়ণগঞ্জ সদর",
+    "districtId": 3,
+    "latitude": 23.6127,
+    "longitude": 90.4949,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-CH-CT-CT",
+    "nameEn": "Chittagong Sadar",
+    "nameBn": "চট্টগ্রাম সদর",
+    "districtId": 6,
+    "latitude": 22.3384,
+    "longitude": 91.8265,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-CH-CX-CX",
+    "nameEn": "Cox's Bazar Sadar",
+    "nameBn": "কক্সবাজার সদর",
+    "districtId": 7,
+    "latitude": 21.4515,
+    "longitude": 91.968,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-KH-KH-KH",
+    "nameEn": "Khulna Sadar",
+    "nameBn": "খুলনা সদর",
+    "districtId": 10,
+    "latitude": 22.8138,
+    "longitude": 89.1713,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-RJ-RJ-RJ",
+    "nameEn": "Rajshahi Sadar",
+    "nameBn": "রাজশাহী সদর",
+    "districtId": 13,
+    "latitude": 24.3745,
+    "longitude": 88.6042,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-SY-SY-SY",
+    "nameEn": "Sylhet Sadar",
+    "nameBn": "সিলেট সদর",
+    "districtId": 16,
+    "latitude": 24.8949,
+    "longitude": 91.8687,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-BR-BR-BR",
+    "nameEn": "Barisal Sadar",
+    "nameBn": "বরিশাল সদর",
+    "districtId": 18,
+    "latitude": 22.701,
+    "longitude": 90.3535,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-RN-RN-RN",
+    "nameEn": "Rangpur Sadar",
+    "nameBn": "রংপুর সদর",
+    "districtId": 20,
+    "latitude": 25.7459,
+    "longitude": 89.25,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-MY-MY-MY",
+    "nameEn": "Mymensingh Sadar",
+    "nameBn": "ময়মনসিংহ সদর",
+    "districtId": 22,
+    "latitude": 24.7465,
+    "longitude": 90.4081,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+]

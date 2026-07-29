@@ -1,94 +1,75 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../node_modules/.prisma/client"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-enum ProfileVisibility {
-  PUBLIC
-  FOLLOWERS_ONLY
-  PRIVATE
-}
-
-enum PostPrivacy {
-  PUBLIC
-  FOLLOWERS_ONLY
-  PRIVATE
-}
-
-enum PostType {
-  TEXT
-  IMAGE
-  VIDEO
-  REEL
-}
-
-enum PostCategory {
-  GENERAL
-  FUNDRAISING
-}
-
-enum PostStatus {
-  ACTIVE
-  DELETED
-}
-
-enum CommentStatus {
-  ACTIVE
-  DELETED
-}
-
-enum MediaStatus {
-  READY
-  PROCESSING
-  FAILED
-}
-
-enum FriendRequestStatus {
-  PENDING
-  ACCEPTED
-  REJECTED
-  CANCELED
-}
-
 model User {
-  id                     Int               @id @default(autoincrement())
-  createdAt              DateTime          @default(now())
-  updatedAt              DateTime          @updatedAt
-  profile                UserProfile?
-  wallet                 Wallet?
-  uploadedMedia          Media[]           @relation("MediaOwner")
-  authoredPosts          Post[]            @relation("PostAuthor")
-  authoredComments       PostComment[]     @relation("CommentAuthor")
-  postLikes              PostLike[]        @relation("PostLikedBy")
-  postBookmarks          PostBookmark[]    @relation("PostBookmarkedBy")
-  postViews              PostView[]        @relation("PostViewedBy")
-  postShares             PostShare[]       @relation("PostSharedBy")
-  commentLikes           PostCommentLike[] @relation("CommentLikedBy")
-  followers              UserFollow[]      @relation("UserFollowers")
-  following              UserFollow[]      @relation("UserFollowing")
-  profileLikesReceived   UserProfileLike[] @relation("ProfileLikeTarget")
-  profileLikesGiven      UserProfileLike[] @relation("ProfileLikeActor")
-  blocksGiven            UserBlock[]       @relation("UserBlocker")
-  blocksReceived         UserBlock[]       @relation("UserBlocked")
-  friendRequestsSent     FriendRequest[]   @relation("FriendRequestSender")
-  friendRequestsReceived FriendRequest[]   @relation("FriendRequestRecipient")
+  id                              Int                   @id @default(autoincrement())
+  createdAt                       DateTime              @default(now())
+  updatedAt                       DateTime              @updatedAt
+  friendRequestsSent              FriendRequest[]       @relation("FriendRequestSender")
+  friendRequestsReceived          FriendRequest[]       @relation("FriendRequestRecipient")
+  uploadedMedia                   Media[]               @relation("MediaOwner")
+  authoredPosts                   Post[]                @relation("PostAuthor")
+  postBookmarks                   PostBookmark[]        @relation("PostBookmarkedBy")
+  authoredComments                PostComment[]         @relation("CommentAuthor")
+  commentLikes                    PostCommentLike[]     @relation("CommentLikedBy")
+  postLikes                       PostLike[]            @relation("PostLikedBy")
+  postShares                      PostShare[]           @relation("PostSharedBy")
+  postViews                       PostView[]            @relation("PostViewedBy")
+  blocksReceived                  UserBlock[]           @relation("UserBlocked")
+  blocksGiven                     UserBlock[]           @relation("UserBlocker")
+  centralAuthLink                 UserCentralAuthLink?
+  following                       UserFollow[]          @relation("UserFollowing")
+  followers                       UserFollow[]          @relation("UserFollowers")
+  profile                         UserProfile?
+  profileLikesGiven               UserProfileLike[]     @relation("ProfileLikeActor")
+  profileLikesReceived            UserProfileLike[]     @relation("ProfileLikeTarget")
+  wallet                          Wallet?
+  adoptionApplicationsAsApplicant AdoptionApplication[] @relation("AdoptionApplicationApplicant")
+  adoptionApplicationsAsOwner     AdoptionApplication[] @relation("AdoptionApplicationOwner")
+  adoptionListings                AdoptionListing[]
+}
+
+model UserCentralAuthLink {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @unique
+  subject    String   @unique
+  linkedAt   DateTime @default(now())
+  linkMethod String   @default("direct")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([subject])
+}
+
+model UserAuth {
+  id              Int       @id @default(autoincrement())
+  userId          Int
+  email           String?   @unique
+  phone           String?
+  provider        String    @default("LOCAL")
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, provider])
+  @@index([email])
+  @@index([phone])
 }
 
 model Wallet {
   userId  Int     @id
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   points  Int     @default(0)
   balance Decimal @db.Decimal(18, 2)
   tier    String?
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserProfile {
   userId          Int               @id
-  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   username        String            @unique
   displayName     String
   bio             String?
@@ -96,9 +77,7 @@ model UserProfile {
   showEmail       Boolean           @default(true)
   showPhone       Boolean           @default(false)
   avatarMediaId   Int?
-  avatarMedia     Media?            @relation("UserProfileAvatar", fields: [avatarMediaId], references: [id], onDelete: SetNull)
   coverMediaId    Int?
-  coverMedia      Media?            @relation("UserProfileCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
   education       String?
   placeLive       String?
   fansAndFriends  String?
@@ -110,38 +89,49 @@ model UserProfile {
   birthdate       DateTime?
   maritalStatus   String?
   isLocked        Boolean           @default(false)
+  avatarMedia     Media?            @relation("UserProfileAvatar", fields: [avatarMediaId], references: [id])
+  coverMedia      Media?            @relation("UserProfileCover", fields: [coverMediaId], references: [id])
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([visibility])
   @@index([displayName])
 }
 
 model Media {
-  id                 Int           @id @default(autoincrement())
-  ownerUserId        Int
-  ownerUser          User          @relation("MediaOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  filename           String
-  mimetype           String
-  size               Int
-  storageKey         String        @unique
-  url                String        @unique
-  thumbnailUrl       String?
-  hlsUrl             String?
-  status             MediaStatus   @default(READY)
-  processingError    String?
-  createdAt          DateTime      @default(now())
-  avatarProfiles     UserProfile[] @relation("UserProfileAvatar")
-  coverProfiles      UserProfile[] @relation("UserProfileCover")
-  postMedia          PostMedia[]   @relation("PostMediaAsset")
-  commentAttachments PostComment[] @relation("CommentAttachment")
+  id                   Int           @id @default(autoincrement())
+  ownerUserId          Int
+  filename             String
+  mimetype             String
+  size                 Int
+  storageKey           String        @unique
+  url                  String        @unique
+  thumbnailUrl         String?
+  hlsUrl               String?
+  status               MediaStatus   @default(READY)
+  processingError      String?
+  purpose              String        @default("generic")
+  contentType          String?
+  contentId            String?
+  uploadIdempotencyKey String?
+  createdAt            DateTime      @default(now())
+  deletionRetries      Int           @default(0)
+  markedForDeletionAt  DateTime?
+  ownerUser            User          @relation("MediaOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  commentAttachments   PostComment[] @relation("CommentAttachment")
+  postMedia            PostMedia[]   @relation("PostMediaAsset")
+  avatarProfiles       UserProfile[] @relation("UserProfileAvatar")
+  coverProfiles        UserProfile[] @relation("UserProfileCover")
 
+  @@unique([ownerUserId, uploadIdempotencyKey])
   @@index([ownerUserId, createdAt])
   @@index([status, createdAt])
+  @@index([markedForDeletionAt])
+  @@index([contentType, contentId])
 }
 
 model Post {
   id                    Int            @id @default(autoincrement())
   authorId              Int
-  author                User           @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
   type                  PostType       @default(TEXT)
   category              PostCategory   @default(GENERAL)
   caption               String?
@@ -169,12 +159,13 @@ model Post {
   status                PostStatus     @default(ACTIVE)
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
-  media                 PostMedia[]
-  likes                 PostLike[]
+  author                User           @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
   bookmarks             PostBookmark[]
-  views                 PostView[]
   comments              PostComment[]
+  likes                 PostLike[]
+  media                 PostMedia[]
   shares                PostShare[]
+  views                 PostView[]
 
   @@index([authorId, createdAt])
   @@index([privacy, status, createdAt])
@@ -184,10 +175,10 @@ model Post {
 model PostMedia {
   id       Int   @id @default(autoincrement())
   postId   Int
-  post     Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
   mediaId  Int
-  media    Media @relation("PostMediaAsset", fields: [mediaId], references: [id], onDelete: Cascade)
   position Int   @default(0)
+  media    Media @relation("PostMediaAsset", fields: [mediaId], references: [id], onDelete: Cascade)
+  post     Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@unique([postId, mediaId])
   @@index([postId, position])
@@ -196,10 +187,10 @@ model PostMedia {
 model PostLike {
   id        Int      @id @default(autoincrement())
   postId    Int
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   userId    Int
-  user      User     @relation("PostLikedBy", fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation("PostLikedBy", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([postId, userId])
   @@index([userId, createdAt])
@@ -208,10 +199,10 @@ model PostLike {
 model PostBookmark {
   id        Int      @id @default(autoincrement())
   postId    Int
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   userId    Int
-  user      User     @relation("PostBookmarkedBy", fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation("PostBookmarkedBy", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([postId, userId])
   @@index([userId, createdAt])
@@ -220,10 +211,10 @@ model PostBookmark {
 model PostView {
   id           Int      @id @default(autoincrement())
   postId       Int
-  post         Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   viewerUserId Int
-  viewer       User     @relation("PostViewedBy", fields: [viewerUserId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())
+  post         Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  viewer       User     @relation("PostViewedBy", fields: [viewerUserId], references: [id], onDelete: Cascade)
 
   @@unique([postId, viewerUserId])
   @@index([viewerUserId, createdAt])
@@ -232,10 +223,10 @@ model PostView {
 model PostShare {
   id          Int      @id @default(autoincrement())
   postId      Int
-  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   actorUserId Int
-  actor       User     @relation("PostSharedBy", fields: [actorUserId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
+  actor       User     @relation("PostSharedBy", fields: [actorUserId], references: [id], onDelete: Cascade)
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId, createdAt])
 }
@@ -243,19 +234,19 @@ model PostShare {
 model PostComment {
   id                Int               @id @default(autoincrement())
   postId            Int
-  post              Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
   authorId          Int
-  author            User              @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
   parentId          Int?
-  parent            PostComment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies           PostComment[]     @relation("CommentReplies")
   text              String
   isEdited          Boolean           @default(false)
   attachmentMediaId Int?
-  attachmentMedia   Media?            @relation("CommentAttachment", fields: [attachmentMediaId], references: [id], onDelete: SetNull)
   status            CommentStatus     @default(ACTIVE)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
+  attachmentMedia   Media?            @relation("CommentAttachment", fields: [attachmentMediaId], references: [id])
+  author            User              @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  parent            PostComment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies           PostComment[]     @relation("CommentReplies")
+  post              Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
   likes             PostCommentLike[]
 
   @@index([postId, parentId, createdAt])
@@ -265,10 +256,10 @@ model PostComment {
 model PostCommentLike {
   id        Int         @id @default(autoincrement())
   commentId Int
-  comment   PostComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
   userId    Int
-  user      User        @relation("CommentLikedBy", fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime    @default(now())
+  comment   PostComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User        @relation("CommentLikedBy", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([commentId, userId])
   @@index([userId, createdAt])
@@ -277,10 +268,10 @@ model PostCommentLike {
 model UserFollow {
   id          Int      @id @default(autoincrement())
   followerId  Int
-  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
   followingId Int
-  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
 
   @@unique([followerId, followingId])
   @@index([followingId, createdAt])
@@ -289,10 +280,10 @@ model UserFollow {
 model UserProfileLike {
   id            Int      @id @default(autoincrement())
   targetUserId  Int
-  targetUser    User     @relation("ProfileLikeTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
   likedByUserId Int
-  likedByUser   User     @relation("ProfileLikeActor", fields: [likedByUserId], references: [id], onDelete: Cascade)
   createdAt     DateTime @default(now())
+  likedByUser   User     @relation("ProfileLikeActor", fields: [likedByUserId], references: [id], onDelete: Cascade)
+  targetUser    User     @relation("ProfileLikeTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
 
   @@unique([targetUserId, likedByUserId])
   @@index([likedByUserId, createdAt])
@@ -301,10 +292,10 @@ model UserProfileLike {
 model UserBlock {
   id            Int      @id @default(autoincrement())
   blockerId     Int
-  blocker       User     @relation("UserBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
   blockedUserId Int
-  blockedUser   User     @relation("UserBlocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
   createdAt     DateTime @default(now())
+  blockedUser   User     @relation("UserBlocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+  blocker       User     @relation("UserBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
 
   @@unique([blockerId, blockedUserId])
   @@index([blockedUserId, createdAt])
@@ -313,67 +304,88 @@ model UserBlock {
 model FriendRequest {
   id         Int                 @id @default(autoincrement())
   fromUserId Int
-  fromUser   User                @relation("FriendRequestSender", fields: [fromUserId], references: [id], onDelete: Cascade)
   toUserId   Int
-  toUser     User                @relation("FriendRequestRecipient", fields: [toUserId], references: [id], onDelete: Cascade)
   status     FriendRequestStatus @default(PENDING)
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
+  fromUser   User                @relation("FriendRequestSender", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User                @relation("FriendRequestRecipient", fields: [toUserId], references: [id], onDelete: Cascade)
 
   @@index([fromUserId, toUserId, status])
   @@index([toUserId, status])
 }
 
-// ============================================================================
-// LOCATION REFERENCE DATA
-// Bangladesh Administrative Hierarchy (5 levels: Division -> District -> Upazila -> Union -> Area)
-// ============================================================================
+model Country {
+  id               Int               @id @default(autoincrement())
+  iso2             String            @unique @db.VarChar(2)
+  iso3             String?           @db.VarChar(3)
+  name             String
+  nameBn           String?
+  isActive         Boolean           @default(true)
+  sortOrder        Int               @default(0)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  adoptionListings AdoptionListing[]
+
+  @@index([isActive, sortOrder])
+  @@map("countries")
+}
 
 model BdDivision {
-  id        Int          @id @default(autoincrement())
-  code      String       @unique
-  nameEn    String
-  nameBn    String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  districts BdDistrict[]
+  id               Int               @id @default(autoincrement())
+  code             String            @unique
+  nameEn           String
+  nameBn           String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  isActive         Boolean           @default(true)
+  sortOrder        Int               @default(0)
+  adoptionListings AdoptionListing[]
+  districts        BdDistrict[]
 
+  @@index([isActive, sortOrder])
   @@map("bd_divisions")
 }
 
 model BdDistrict {
-  id         Int         @id @default(autoincrement())
-  code       String      @unique
-  nameEn     String
-  nameBn     String?
-  divisionId Int
-  latitude   Decimal?    @db.Decimal(10, 8)
-  longitude  Decimal?    @db.Decimal(11, 8)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  division   BdDivision  @relation(fields: [divisionId], references: [id], onDelete: Cascade)
-  upazilas   BdUpazila[]
-  areas      BdArea[]    @relation("BdDistrictAreas")
+  id               Int               @id @default(autoincrement())
+  code             String            @unique
+  nameEn           String
+  nameBn           String?
+  divisionId       Int
+  latitude         Decimal?          @db.Decimal(10, 8)
+  longitude        Decimal?          @db.Decimal(11, 8)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  isActive         Boolean           @default(true)
+  sortOrder        Int               @default(0)
+  adoptionListings AdoptionListing[]
+  areas            BdArea[]          @relation("BdDistrictAreas")
+  division         BdDivision        @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  upazilas         BdUpazila[]
 
-  @@index([divisionId])
+  @@index([divisionId, isActive, sortOrder])
   @@map("bd_districts")
 }
 
 model BdUpazila {
-  id         Int        @id @default(autoincrement())
-  code       String     @unique
-  nameEn     String
-  nameBn     String?
-  districtId Int
-  latitude   Decimal?   @db.Decimal(10, 8)
-  longitude  Decimal?   @db.Decimal(11, 8)
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  district   BdDistrict @relation(fields: [districtId], references: [id], onDelete: Cascade)
-  unions     BdUnion[]
-  areas      BdArea[]
+  id               Int               @id @default(autoincrement())
+  code             String            @unique
+  nameEn           String
+  nameBn           String?
+  districtId       Int
+  latitude         Decimal?          @db.Decimal(10, 8)
+  longitude        Decimal?          @db.Decimal(11, 8)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  isActive         Boolean           @default(true)
+  sortOrder        Int               @default(0)
+  adoptionListings AdoptionListing[]
+  areas            BdArea[]
+  unions           BdUnion[]
+  district         BdDistrict        @relation(fields: [districtId], references: [id], onDelete: Cascade)
 
-  @@index([districtId])
+  @@index([districtId, isActive, sortOrder])
   @@map("bd_upazilas")
 }
 
@@ -387,44 +399,48 @@ model BdUnion {
   longitude Decimal?  @db.Decimal(11, 8)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  upazila   BdUpazila @relation(fields: [upazilaId], references: [id], onDelete: Cascade)
+  isActive  Boolean   @default(true)
+  sortOrder Int       @default(0)
   areas     BdArea[]
+  upazila   BdUpazila @relation(fields: [upazilaId], references: [id], onDelete: Cascade)
 
-  @@index([upazilaId])
+  @@index([upazilaId, isActive, sortOrder])
   @@map("bd_unions")
 }
 
 model BdArea {
-  id         Int         @id @default(autoincrement())
-  code       String      @unique
-  nameEn     String
-  nameBn     String?
-  type       String // "UNION", "AREA", "WARD", "WARD_NO", etc.
-  unionId    Int?
-  upazilaId  Int?
-  districtId Int?
-  parentId   Int?
-  latitude   Decimal?    @db.Decimal(10, 8)
-  longitude  Decimal?    @db.Decimal(11, 8)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  union      BdUnion?    @relation(fields: [unionId], references: [id], onDelete: SetNull)
-  upazila    BdUpazila?  @relation(fields: [upazilaId], references: [id], onDelete: SetNull)
-  district   BdDistrict? @relation("BdDistrictAreas", fields: [districtId], references: [id], onDelete: SetNull)
-  parent     BdArea?     @relation("BdAreaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children   BdArea[]    @relation("BdAreaHierarchy")
+  id               Int               @id @default(autoincrement())
+  code             String            @unique
+  nameEn           String
+  nameBn           String?
+  type             String
+  reviewStatus     String            @default("CURRENT_VERIFIED")
+  currentValidity  String            @default("CURRENT_VERIFIED")
+  provenance       Json?
+  unionId          Int?
+  upazilaId        Int?
+  districtId       Int?
+  parentId         Int?
+  latitude         Decimal?          @db.Decimal(10, 8)
+  longitude        Decimal?          @db.Decimal(11, 8)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  isActive         Boolean           @default(true)
+  sortOrder        Int               @default(0)
+  adoptionListings AdoptionListing[]
+  district         BdDistrict?       @relation("BdDistrictAreas", fields: [districtId], references: [id])
+  parent           BdArea?           @relation("BdAreaHierarchy", fields: [parentId], references: [id])
+  children         BdArea[]          @relation("BdAreaHierarchy")
+  union            BdUnion?          @relation(fields: [unionId], references: [id])
+  upazila          BdUpazila?        @relation(fields: [upazilaId], references: [id])
 
-  @@index([unionId])
-  @@index([upazilaId])
-  @@index([districtId])
-  @@index([type])
+  @@index([unionId, isActive, sortOrder])
+  @@index([upazilaId, isActive, sortOrder])
+  @@index([districtId, isActive, sortOrder])
+  @@index([parentId, isActive, sortOrder])
+  @@index([type, isActive])
   @@map("bd_areas")
 }
-
-// ============================================================================
-// ANIMAL REFERENCE DATA
-// Animal taxonomy: Category -> Type -> Breed
-// ============================================================================
 
 model AnimalCategory {
   id           Int          @id @default(autoincrement())
@@ -434,26 +450,29 @@ model AnimalCategory {
   isActive     Boolean      @default(true)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+  nameBn       String?
   animalTypes  AnimalType[]
 
   @@map("animal_categories")
 }
 
 model AnimalType {
-  id             Int             @id @default(autoincrement())
-  name           String          @unique
-  categoryId     Int?
-  code           String?         @unique
-  scientificName String?         @db.VarChar(128)
-  icon           String?         @db.VarChar(64)
-  displayOrder   Int             @default(0)
-  isActive       Boolean         @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  category       AnimalCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  breeds         Breed[]
+  id               Int               @id @default(autoincrement())
+  name             String            @unique
+  categoryId       Int?
+  code             String?           @unique
+  scientificName   String?           @db.VarChar(128)
+  icon             String?           @db.VarChar(64)
+  displayOrder     Int               @default(0)
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  nameBn           String?
+  adoptionListings AdoptionListing[]
+  category         AnimalCategory?   @relation(fields: [categoryId], references: [id])
+  breeds           Breed[]
 
-  @@index([categoryId])
+  @@index([categoryId, isActive, displayOrder])
   @@map("animal_types")
 }
 
@@ -498,24 +517,573 @@ model CoatPattern {
 }
 
 model Breed {
-  id            Int         @id @default(autoincrement())
-  name          String
-  animalTypeId  Int
-  code          String?     @db.VarChar(64)
-  aliasNames    Json?
-  originCountry String?     @db.VarChar(64)
-  defaultSizeId Int?
-  isMixed       Boolean     @default(false)
-  isOther       Boolean     @default(false)
-  displayOrder  Int         @default(0)
-  isActive      Boolean     @default(true)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  animalType    AnimalType  @relation(fields: [animalTypeId], references: [id], onDelete: Cascade)
-  defaultSize   AnimalSize? @relation(fields: [defaultSizeId], references: [id], onDelete: SetNull)
+  id               Int               @id @default(autoincrement())
+  name             String
+  animalTypeId     Int
+  code             String?           @db.VarChar(64)
+  aliasNames       Json?
+  originCountry    String?           @db.VarChar(64)
+  defaultSizeId    Int?
+  isMixed          Boolean           @default(false)
+  isOther          Boolean           @default(false)
+  displayOrder     Int               @default(0)
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  nameBn           String?
+  isLocal          Boolean           @default(false)
+  isUnknown        Boolean           @default(false)
+  adoptionListings AdoptionListing[]
+  animalType       AnimalType        @relation(fields: [animalTypeId], references: [id], onDelete: Cascade)
+  defaultSize      AnimalSize?       @relation(fields: [defaultSizeId], references: [id])
 
   @@unique([name, animalTypeId])
-  @@index([animalTypeId])
+  @@index([animalTypeId, isActive, displayOrder])
   @@index([defaultSizeId])
   @@map("breeds")
+}
+
+model AdoptionListing {
+  id                           Int                   @id @default(autoincrement())
+  ownerUserId                  Int
+  status                       AdoptionStatus        @default(DRAFT)
+  petName                      String?
+  animalTypeId                 Int?
+  breedId                      Int?
+  sex                          String?               @db.VarChar(16)
+  ageText                      String?
+  ageYears                     Int?
+  ageMonths                    Int?
+  ageDays                      Int?
+  totalAgeDays                 Int?
+  approximateDateOfBirth       DateTime?
+  size                         String?               @db.VarChar(64)
+  colors                       String?
+  story                        String?
+  adoptionReason               String?
+  vaccinated                   Boolean               @default(false)
+  dewormed                     Boolean               @default(false)
+  neutered                     Boolean               @default(false)
+  microchipped                 Boolean               @default(false)
+  healthInfo                   String?
+  countryId                    Int?
+  bdDivisionId                 Int?
+  bdDistrictId                 Int?
+  bdAddressMode                String?
+  bdCityCorporationId          Int?
+  bdZoneId                     Int?
+  bdWardId                     Int?
+  bdUpazilaId                  Int?
+  bdUnionId                    Int?
+  bdAreaId                     Int?
+  ownerCityAreaText            String?
+  latitude                     Decimal?              @db.Decimal(10, 8)
+  longitude                    Decimal?              @db.Decimal(11, 8)
+  ownerContactPhone            String?
+  ownerWhatsappPhone           String?
+  pickupLocationNotes          String?
+  serviceAreaType              String?
+  serviceAreaNotes             String?
+  customServiceAreas           Json?
+  allowInternationalAdoption   Boolean               @default(false)
+  adopterConditions            Json?
+  adoptionExperienceRequired   Boolean               @default(false)
+  homeCheckRequired            Boolean               @default(false)
+  vetReferenceRequired         Boolean               @default(false)
+  identityVerificationRequired Boolean               @default(false)
+  landlordApprovalRequired     Boolean               @default(false)
+  minimumMonthlyIncomeRange    String?
+  maximumMonthlyIncomeRange    String?
+  notes                        String?
+  mediaIds                     Int[]
+  idempotencyKey               String?               @unique
+  createdAt                    DateTime              @default(now())
+  updatedAt                    DateTime              @updatedAt
+  publishedAt                  DateTime?
+  archivedAt                   DateTime?
+  markedForDeletionAt          DateTime?
+  deletionRetries              Int                   @default(0)
+  adoptionApplications         AdoptionApplication[]
+  animalType                   AnimalType?           @relation(fields: [animalTypeId], references: [id])
+  bdArea                       BdArea?               @relation(fields: [bdAreaId], references: [id])
+  bdDistrict                   BdDistrict?           @relation(fields: [bdDistrictId], references: [id])
+  bdDivision                   BdDivision?           @relation(fields: [bdDivisionId], references: [id])
+  bdUpazila                    BdUpazila?            @relation(fields: [bdUpazilaId], references: [id])
+  breed                        Breed?                @relation(fields: [breedId], references: [id])
+  country                      Country?              @relation(fields: [countryId], references: [id])
+  ownerUser                    User                  @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@index([ownerUserId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([markedForDeletionAt])
+  @@index([animalTypeId, breedId])
+  @@map("adoption_listings")
+}
+
+model AdoptionApplication {
+  id                         Int                       @id @default(autoincrement())
+  adoptionListingId          Int
+  applicantUserId            Int
+  ownerUserId                Int
+  status                     AdoptionApplicationStatus @default(SUBMITTED)
+  applicantName              String
+  applicantPhone             String
+  applicantWhatsappPhone     String?
+  applicantLocationText      String?
+  applicantCityAreaText      String?
+  applicantEmail             String?
+  applicantHouseholdSummary  String?
+  applicantExperienceSummary String?
+  applicantOtherPetsSummary  String?
+  applicantIncomeRange       String?
+  messageToOwner             String?
+  answers                    Json?
+  consentToHomeCheck         Boolean                   @default(false)
+  consentToFollowUp          Boolean                   @default(false)
+  ownerNotes                 String?
+  rejectedReason             String?
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
+  reviewedAt                 DateTime?
+  closedAt                   DateTime?
+  adoptionListing            AdoptionListing           @relation(fields: [adoptionListingId], references: [id], onDelete: Cascade)
+  applicantUser              User                      @relation("AdoptionApplicationApplicant", fields: [applicantUserId], references: [id], onDelete: Cascade)
+  ownerUser                  User                      @relation("AdoptionApplicationOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([adoptionListingId, applicantUserId])
+  @@index([applicantUserId, createdAt])
+  @@index([ownerUserId, adoptionListingId, createdAt])
+  @@index([adoptionListingId, status, createdAt])
+  @@map("adoption_applications")
+}
+
+/// Durable verification account for the fundraising KYC flow. Replaces the
+/// previous process-memory-only `FundraisingStore` account map — one row
+/// per owner (`ownerUserId` unique), holding identity/location/status data
+/// that must survive restarts, deploys, and multiple API instances.
+/// `mediaId`/`ownerUserId` are deliberately plain scalar columns (no Prisma
+/// relation to `User`/`Media`) so this migration does not touch those
+/// unrelated models — existence/ownership is still enforced at the service
+/// layer exactly as it was for the in-memory store.
+model FundraisingVerificationAccount {
+  id                    Int                               @id @default(autoincrement())
+  ownerUserId           Int                               @unique
+  status                FundraisingVerificationStatus     @default(DRAFT)
+  accountType           String?                           @db.VarChar(32)
+  fullName              String?
+  /// Encrypted at rest (AES-256-GCM, see kyc-encryption.ts) as a
+  /// `v<version>:<iv>:<authTag>:<ciphertext>` envelope. Canonical plaintext
+  /// is a date-only value (YYYY-MM-DD) — never a DateTime, so no UTC
+  /// conversion can shift the stored calendar day. No longer fixed-width
+  /// (VarChar(10)) since the envelope is much longer than the plaintext.
+  dateOfBirth           String?
+  /// Encrypted at rest — see kyc-encryption.ts.
+  presentAddress        String?
+  /// Encrypted at rest — see kyc-encryption.ts.
+  permanentAddress      String?
+  occupation            String?
+  isInternational       Boolean                           @default(false)
+  divisionId            Int?
+  districtId            Int?
+  upazilaId             Int?
+  unionId               Int?
+  areaId                Int?
+  area                  String?
+  countryCode           String?                           @db.VarChar(8)
+  countryName           String?
+  stateName             String?
+  cityName              String?
+  /// Encrypted at rest — see kyc-encryption.ts.
+  addressLine           String?
+  latitude              Decimal?                          @db.Decimal(10, 8)
+  longitude             Decimal?                          @db.Decimal(11, 8)
+  formattedAddress      String?
+  primaryDocumentType   String?
+  /// Private identity fields, encrypted at rest (AES-256-GCM envelope —
+  /// see kyc-encryption.ts) — never log, never serialize into any public
+  /// campaign DTO. Only the owner and an authorized reviewer/admin may read
+  /// these (enforced in `fundraising-store.ts`, not only route middleware).
+  nationalIdNumber      String?
+  birthRegNumber        String?
+  passportNumber        String?
+  studentIdNumber       String?
+  drivingLicenceNumber  String?
+  verificationDraftJson Json?
+  /// Reviewer-facing rejection note — owner/admin only, never public.
+  rejectionReason       String?
+  submittedAt           DateTime?
+  reviewedAt            DateTime?
+  reviewedByUserId      Int?
+  /// Optimistic-concurrency token — every update must match the version it
+  /// read and increments it; a stale write fails instead of silently
+  /// clobbering a concurrent change.
+  version               Int                               @default(0)
+  createdAt             DateTime                          @default(now())
+  updatedAt             DateTime                          @updatedAt
+  documents             FundraisingVerificationDocument[]
+
+  @@index([status])
+  @@index([status, submittedAt])
+  @@map("fundraising_verification_accounts")
+}
+
+/// Binds an uploaded `Media` row (existing media system) to a verification
+/// account as either the required PRIMARY identity document or an optional
+/// SUPPORTING one. Soft-deleted via `deletedAt` so removal history is kept
+/// for reviewers without a hard delete.
+model FundraisingVerificationDocument {
+  id           Int                                 @id @default(autoincrement())
+  accountId    Int
+  mediaId      Int
+  title        String
+  documentType FundraisingVerificationDocumentType @default(SUPPORTING)
+  createdAt    DateTime                            @default(now())
+  deletedAt    DateTime?
+  account      FundraisingVerificationAccount      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, deletedAt])
+  @@index([mediaId])
+  @@map("fundraising_verification_documents")
+}
+
+enum ProfileVisibility {
+  PUBLIC
+  FOLLOWERS_ONLY
+  PRIVATE
+}
+
+enum PostPrivacy {
+  PUBLIC
+  FOLLOWERS_ONLY
+  PRIVATE
+}
+
+enum PostType {
+  TEXT
+  IMAGE
+  VIDEO
+  REEL
+}
+
+enum PostCategory {
+  GENERAL
+  FUNDRAISING
+}
+
+enum PostStatus {
+  ACTIVE
+  DELETED
+}
+
+enum CommentStatus {
+  ACTIVE
+  DELETED
+}
+
+enum MediaStatus {
+  READY
+  PROCESSING
+  FAILED
+  PENDING_DELETION
+  DELETED
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELED
+}
+
+enum AdoptionStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  PAUSED
+  ADOPTED
+  REJECTED
+  ARCHIVED
+  DELETED
+}
+
+enum AdoptionApplicationStatus {
+  SUBMITTED
+  VIEWED
+  SHORTLISTED
+  OWNER_REVIEW
+  INTERVIEW_SCHEDULED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum FundraisingVerificationStatus {
+  DRAFT
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum FundraisingVerificationDocumentType {
+  PRIMARY
+  SUPPORTING
+}
+
+/// Durable working draft for a campaign before it is submitted for review.
+/// Media bindings stay a plain scalar array here (mirrors
+/// `AdoptionListing.mediaIds`) since a draft is pre-publish, ephemeral
+/// working data — `FundraisingCampaignMedia` (a real join table) is used
+/// once a campaign actually exists, per the task's explicit ask.
+model FundraisingCampaignDraft {
+  id                    Int                  @id @default(autoincrement())
+  publicId              String               @unique
+  ownerUserId           Int
+  /// DRAFT | SUBMITTED | ARCHIVED
+  status                String               @default("DRAFT")
+  title                 String?
+  caption               String?
+  category              String?
+  fundingMode           String               @default("ONE_TIME")
+  currencyCode          String               @default("BDT")
+  targetAmountMinor     BigInt?
+  monthlyGoalMinor      BigInt?
+  startsAt              DateTime?
+  endsAt                DateTime?
+  deadline              DateTime?
+  nextReviewAt          DateTime?
+  beneficiaryType       String?
+  beneficiaryName       String?
+  petId                 Int?
+  urgency               String?
+  treatmentProvider     String?
+  estimatedExpenseMinor BigInt?
+  spendingPlan          Json?
+  locationText          String?
+  countryId             Int?
+  stateId               Int?
+  cityId                Int?
+  subDistrictId         Int?
+  bdDivisionId          Int?
+  bdDistrictId          Int?
+  bdUpazilaId           Int?
+  bdAreaId              Int?
+  mediaIds              Int[]
+  submittedAt           DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  campaign              FundraisingCampaign?
+
+  @@index([ownerUserId, status, createdAt])
+  @@map("fundraising_campaign_drafts")
+}
+
+/// A published/submitted fundraising campaign. `raisedAmountMinor`,
+/// `withdrawnAmountMinor`, and `donorsCount` are maintained totals derived
+/// from `FundraisingDonation` — kept on the campaign row (rather than
+/// computed with an aggregate query on every read) for performance, and
+/// only ever changed inside the same transaction that finalizes a
+/// donation, so they never drift from the underlying donation rows.
+/// `version` provides optimistic concurrency for campaign edits.
+model FundraisingCampaign {
+  id                         Int                         @id @default(autoincrement())
+  publicId                   String                      @unique
+  ownerUserId                Int
+  draftId                    Int?                        @unique
+  title                      String
+  caption                    String?
+  category                   String?
+  fundingMode                String                      @default("ONE_TIME")
+  currencyCode               String                      @default("BDT")
+  targetAmountMinor          BigInt?
+  monthlyGoalMinor           BigInt?
+  raisedAmountMinor          BigInt                      @default(0)
+  withdrawnAmountMinor       BigInt                      @default(0)
+  donorsCount                Int                         @default(0)
+  startsAt                   DateTime?
+  endsAt                     DateTime?
+  deadline                   DateTime?
+  nextReviewAt               DateTime?
+  publishedAt                DateTime?
+  /// DRAFT | PENDING_REVIEW | ACTIVE | PAUSED | FUNDED | COMPLETED |
+  /// EXPIRED | CANCELLED | REJECTED | ARCHIVED | SUSPENDED
+  status                     String
+  reviewedAt                 DateTime?
+  reviewedByUserId           Int?
+  rejectionReason            String?
+  cancelledAt                DateTime?
+  archivedAt                 DateTime?
+  completedAt                DateTime?
+  beneficiaryType            String?
+  beneficiaryName            String?
+  petId                      Int?
+  urgency                    String?
+  treatmentProvider          String?
+  estimatedExpenseMinor      BigInt?
+  spendingPlan               Json?
+  locationText               String?
+  countryId                  Int?
+  stateId                    Int?
+  cityId                     Int?
+  subDistrictId              Int?
+  bdDivisionId               Int?
+  bdDistrictId               Int?
+  bdUpazilaId                Int?
+  bdAreaId                   Int?
+  /// Optimistic-concurrency token — see FundraisingVerificationAccount for
+  /// the same pattern (updateMany({where:{id,version}}), count 0 = conflict).
+  version                    Int                         @default(0)
+  createdAt                  DateTime                    @default(now())
+  updatedAt                  DateTime                    @updatedAt
+  deletedAt                  DateTime?
+  draft                      FundraisingCampaignDraft?   @relation(fields: [draftId], references: [id])
+  media                      FundraisingCampaignMedia[]
+  donations                  FundraisingDonation[]
+  fundraisingCampaignUpdates FundraisingCampaignUpdate[]
+
+  @@index([ownerUserId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([deletedAt])
+  @@map("fundraising_campaigns")
+}
+
+model FundraisingCampaignMedia {
+  id         Int                 @id @default(autoincrement())
+  campaignId Int
+  mediaId    Int
+  position   Int                 @default(0)
+  campaign   FundraisingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, mediaId])
+  @@index([campaignId, position])
+  @@map("fundraising_campaign_media")
+}
+
+model FundraisingCampaignUpdate {
+  id           Int                 @id @default(autoincrement())
+  publicId     String              @unique
+  campaignId   Int
+  authorUserId Int
+  title        String?
+  caption      String?
+  mediaIds     Int[]
+  status       String              @default("PUBLISHED")
+  publishedAt  DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  deletedAt    DateTime?
+  campaign     FundraisingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
+  @@index([authorUserId, createdAt])
+  @@index([campaignId, status, deletedAt, createdAt])
+  @@map("fundraising_campaign_updates")
+}
+
+/// A single donation to a campaign. `idempotencyKey` is unique per
+/// (donorUserId, campaignId, key) — a retried checkout request with the
+/// same key returns the existing row instead of creating a duplicate.
+model FundraisingDonation {
+  id                 Int                         @id @default(autoincrement())
+  publicId           String                      @unique
+  referenceId        String                      @unique
+  campaignId         Int
+  donorUserId        Int
+  /// PENDING | PROCESSING | SUCCEEDED | FAILED | CANCELLED | EXPIRED |
+  /// ON_HOLD_REVIEW
+  status             String
+  amountMinor        BigInt
+  currencyCode       String
+  isAnonymous        Boolean                     @default(false)
+  supportMessage     String                      @default("")
+  paymentMethodLabel String                      @default("")
+  consentAccepted    Boolean                     @default(true)
+  idempotencyKey     String
+  requestFingerprint String
+  expiresAt          DateTime
+  finalizedAt        DateTime?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  campaign           FundraisingCampaign         @relation(fields: [campaignId], references: [id])
+  paymentAttempts    FundraisingPaymentAttempt[]
+  receipt            FundraisingReceipt?
+
+  @@unique([donorUserId, campaignId, idempotencyKey])
+  @@index([campaignId, status, createdAt])
+  @@index([donorUserId, createdAt])
+  @@map("fundraising_donations")
+}
+
+/// One checkout/payment attempt against a donation. `providerMetadata`
+/// must only ever contain sanitized provider response fields — never raw
+/// payment credentials or full provider payloads (enforced in
+/// fundraising-store.ts before this is written).
+model FundraisingPaymentAttempt {
+  id                Int                 @id @default(autoincrement())
+  attemptId         String              @unique
+  donationId        Int
+  provider          String
+  /// Provider-side transaction reference.
+  providerPaymentId String?
+  redirectUrl       String?
+  logId             String
+  status            String
+  providerMetadata  Json?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  donation          FundraisingDonation @relation(fields: [donationId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerPaymentId])
+  @@index([donationId])
+  @@index([provider, providerPaymentId])
+  @@map("fundraising_payment_attempts")
+}
+
+/// One row per (provider, eventId) — the unique constraint is what makes
+/// webhook handling idempotent: a redelivered event finds its existing row
+/// and short-circuits instead of re-applying the status transition.
+model FundraisingWebhookEvent {
+  id          Int       @id @default(autoincrement())
+  provider    String
+  eventId     String
+  referenceId String
+  outcome     String    @default("RECEIVED")
+  /// Hash of the canonicalized payload — never the raw payload itself,
+  /// which could contain provider secrets.
+  payloadHash String
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([provider, eventId])
+  @@index([referenceId])
+  @@map("fundraising_webhook_events")
+}
+
+model FundraisingReceipt {
+  id            Int                 @id @default(autoincrement())
+  receiptNumber String              @unique
+  donationId    Int                 @unique
+  amountMinor   BigInt
+  currencyCode  String
+  issuedAt      DateTime            @default(now())
+  donation      FundraisingDonation @relation(fields: [donationId], references: [id])
+
+  @@map("fundraising_receipts")
+}
+
+/// Idempotency ledger for operations that don't otherwise have a natural
+/// unique-constraint home (draft create/submit) — donation checkout uses
+/// `FundraisingDonation.idempotencyKey` directly instead, since it already
+/// has one row per attempt.
+model FundraisingIdempotencyKey {
+  id          Int      @id @default(autoincrement())
+  /// e.g. "draft:create", "draft:submit"
+  scope       String
+  ownerUserId Int
+  key         String
+  /// The draft/campaign id this key resolved to.
+  resourceId  Int
+  createdAt   DateTime @default(now())
+
+  @@unique([scope, ownerUserId, key])
+  @@map("fundraising_idempotency_keys")
 }

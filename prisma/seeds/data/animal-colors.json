@@ -1,0 +1,74 @@
+[
+  {
+    "code": "BLACK",
+    "name": "Black",
+    "hexPreview": "#000000",
+    "displayOrder": 1,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "WHITE",
+    "name": "White",
+    "hexPreview": "#FFFFFF",
+    "displayOrder": 2,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BROWN",
+    "name": "Brown",
+    "hexPreview": "#8B4513",
+    "displayOrder": 3,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "RED",
+    "name": "Red",
+    "hexPreview": "#FF0000",
+    "displayOrder": 4,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "GRAY",
+    "name": "Gray",
+    "hexPreview": "#808080",
+    "displayOrder": 5,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "ORANGE",
+    "name": "Orange",
+    "hexPreview": "#FFA500",
+    "displayOrder": 6,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "YELLOW",
+    "name": "Yellow",
+    "hexPreview": "#FFFF00",
+    "displayOrder": 7,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "TRI_COLOR",
+    "name": "Tri-color",
+    "hexPreview": "#CCCCCC",
+    "displayOrder": 8,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+]

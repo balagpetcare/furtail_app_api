@@ -1,9 +1,12 @@
+import type { MediaStatus, PrismaClient } from '@prisma/client';
 import type {
   MediaStorageAdapter,
   StoredMediaDescriptor,
   UploadedMediaInput,
 } from '../media/media-storage';
+import { buildMediaPublicUrl } from '../media/media-storage';
 import { InMemoryMediaStorageAdapter } from '../media/media-storage';
+import type { AuthenticatedPrincipal } from '../../security/principal';
 
 export type ProfileVisibility = 'PUBLIC' | 'FOLLOWERS_ONLY' | 'PRIVATE';
 export type PostPrivacy = 'PUBLIC' | 'FOLLOWERS_ONLY' | 'PRIVATE';
@@ -13,6 +16,76 @@ export type CommentStatus = 'ACTIVE' | 'DELETED';
 
 export interface SocialPrincipalLike {
   sub: string;
+  email?: string;
+  name?: string;
+}
+
+export interface ResolvedIdentity {
+  id: number;
+  username?: string;
+  displayName?: string;
+  email?: string;
+}
+
+export interface StoryFeedItem {
+  id: number;
+  userId: string;
+  userName: string;
+  userAvatarUrl: string | null;
+  mediaUrl: string;
+  mediaType: string;
+  caption: string | null;
+  createdAt: string;
+  expiresAt: string;
+  viewCount: number;
+  isViewedByMe: boolean;
+  isOwnStory: boolean;
+}
+
+export type IdentityResolver = (principal: SocialPrincipalLike) => Promise<ResolvedIdentity | null>;
+
+/**
+ * Maps a Central Auth principal to the local Furtail user record used for
+ * ownership checks. When a real database is configured, this goes through
+ * `UserCentralAuthLink` (via `getOrProvisionUser`) — the same JIT-provisioning
+ * path `/api/v1/auth/me` uses — so a `sub` never needs to already be a small
+ * integer to resolve.
+ *
+ * When no database is configured (local in-memory dev/test fixtures, where
+ * `DATABASE_URL` is intentionally empty), we fall back to treating `sub` as
+ * an already-local numeric id so the seeded demo users keep working. This
+ * fallback never applies once `DATABASE_URL` is set, so it cannot mask a
+ * misconfiguration in a real deployment.
+ */
+async function defaultIdentityResolver(
+  principal: SocialPrincipalLike,
+): Promise<ResolvedIdentity | null> {
+  const { env } = await import('../../config/env');
+  if (env.DATABASE_URL) {
+    const { getOrProvisionUser } = await import('../auth/auth.service');
+    const profile = await getOrProvisionUser({
+      sub: principal.sub,
+      issuer: 'social-store',
+      audience: 'social-store',
+      clientId: 'social-store',
+      expiresAt: Number.MAX_SAFE_INTEGER,
+      issuedAt: 0,
+      roles: [],
+      permissions: [],
+      scopes: [],
+      email: principal.email,
+      name: principal.name,
+      claims: {},
+    } satisfies AuthenticatedPrincipal);
+    return {
+      id: profile.id,
+      username: profile.username ?? profile.profile?.username,
+      displayName: profile.displayName ?? profile.profile?.displayName,
+      email: profile.email,
+    };
+  }
+  const parsed = parseIntStrict(principal.sub);
+  return parsed ? { id: parsed } : null;
 }
 
 export type NotificationChannel = 'IN_APP' | 'PUSH';
@@ -80,6 +153,17 @@ export interface BlockedUserRecord {
   blockedAt: Date;
 }
 
+export interface StoryRecord {
+  id: number;
+  userId: number;
+  mediaUrl: string;
+  mediaType: 'image' | 'video';
+  caption: string | null;
+  createdAt: Date;
+  expiresAt: Date;
+  viewCount: number;
+}
+
 interface MediaRecord {
   id: number;
   ownerUserId: number;
@@ -90,9 +174,67 @@ interface MediaRecord {
   url: string;
   thumbnailUrl: string | null;
   hlsUrl: string | null;
-  status: 'READY' | 'PROCESSING' | 'FAILED';
+  status: MediaStatus;
   processingError: string | null;
   createdAt: Date;
+  /** What this upload is for (e.g. 'post', 'fundraising_draft', 'adoption_draft', 'generic'). */
+  purpose: string;
+  /** Content type this media is bound to (e.g. 'FUNDRAISING_DRAFT', 'POST'), if known at upload time. */
+  contentType: string | null;
+  /** Content id this media is bound to (draft ids are strings, post/campaign ids are numeric-as-string). */
+  contentId: string | null;
+  uploadIdempotencyKey: string | null;
+}
+
+function mapMediaRowToRecord(row: {
+  id: number;
+  ownerUserId: number;
+  filename: string;
+  mimetype: string;
+  size: number;
+  storageKey: string;
+  url: string;
+  thumbnailUrl: string | null;
+  hlsUrl: string | null;
+  status: MediaStatus;
+  processingError: string | null;
+  createdAt: Date;
+  purpose: string | null;
+  contentType: string | null;
+  contentId: string | null;
+  uploadIdempotencyKey: string | null;
+}): MediaRecord {
+  return {
+    id: row.id,
+    ownerUserId: row.ownerUserId,
+    filename: row.filename,
+    mimetype: row.mimetype,
+    size: row.size,
+    storageKey: row.storageKey,
+    url: row.url,
+    thumbnailUrl: row.thumbnailUrl,
+    hlsUrl: row.hlsUrl,
+    status: row.status,
+    processingError: row.processingError,
+    createdAt: row.createdAt,
+    purpose: row.purpose ?? 'generic',
+    contentType: row.contentType,
+    contentId: row.contentId,
+    uploadIdempotencyKey: row.uploadIdempotencyKey,
+  };
+}
+
+function toPublicMediaStatus(status: MediaStatus): 'READY' | 'PROCESSING' | 'FAILED' {
+  switch (status) {
+    case 'READY':
+      return 'READY';
+    case 'PROCESSING':
+      return 'PROCESSING';
+    case 'FAILED':
+      return 'FAILED';
+    default:
+      return 'FAILED';
+  }
 }
 
 interface UserRecord {
@@ -399,6 +541,7 @@ export const NoopNotificationDeliveryProvider: NotificationDeliveryProvider = {
 export class SocialCoreStore {
   private readonly storage: MediaStorageAdapter;
   private readonly notificationProvider: NotificationDeliveryProvider;
+  private readonly mediaPrisma: PrismaClient | null;
   private nextMediaId = 1;
   private nextPostId = 1;
   private nextCommentId = 1;
@@ -406,6 +549,7 @@ export class SocialCoreStore {
   private nextNotificationId = 1;
   private nextDeviceTokenId = 1;
   private nextReportId = 1;
+  private nextStoryId = 1;
 
   private readonly users = new Map<number, UserRecord>();
   private readonly media = new Map<number, MediaRecord>();
@@ -427,6 +571,8 @@ export class SocialCoreStore {
   private readonly notificationsBySource = new Map<string, number>();
   private readonly reports = new Map<number, ReportRecord>();
   private readonly reportsBySource = new Map<string, number>();
+  private readonly stories = new Map<number, StoryRecord>();
+  private readonly storyViews = new Map<number, Set<number>>();
   private readonly notificationPreferences = new Map<
     number,
     { allowEmail: boolean; allowSms: boolean }
@@ -435,17 +581,24 @@ export class SocialCoreStore {
   constructor(
     storage: MediaStorageAdapter = new InMemoryMediaStorageAdapter(),
     notificationProvider: NotificationDeliveryProvider = NoopNotificationDeliveryProvider,
+    identityResolver: IdentityResolver = defaultIdentityResolver,
+    mediaPrisma: PrismaClient | null = null,
   ) {
     this.storage = storage;
     this.notificationProvider = notificationProvider;
+    this.identityResolver = identityResolver;
+    this.mediaPrisma = mediaPrisma;
     this.seed();
   }
+
+  private readonly identityResolver: IdentityResolver;
 
   reset(): void {
     this.nextMediaId = 1;
     this.nextPostId = 1;
     this.nextCommentId = 1;
     this.nextFriendRequestId = 1;
+    this.nextStoryId = 1;
     this.users.clear();
     this.media.clear();
     this.posts.clear();
@@ -466,6 +619,8 @@ export class SocialCoreStore {
     this.notificationsBySource.clear();
     this.reports.clear();
     this.reportsBySource.clear();
+    this.stories.clear();
+    this.storyViews.clear();
     this.notificationPreferences.clear();
     this.seed();
   }
@@ -629,15 +784,12 @@ export class SocialCoreStore {
     size: number;
     purpose?: 'profile' | 'post' | 'gallery' | 'generic';
   }): MediaRecord {
+    const storageKey = `legacy/${input.ownerUserId}/${this.nextMediaId}/${encodeURIComponent(input.filename)}`;
     const stored = {
-      storageKey: `seed:${input.ownerUserId}:${this.nextMediaId}`,
-      publicUrl: `memory://seed/${input.ownerUserId}/${this.nextMediaId}/${encodeURIComponent(input.filename)}`,
-      thumbnailUrl: input.mimetype.startsWith('image/')
-        ? `memory://thumb/${this.nextMediaId}`
-        : null,
-      hlsUrl: input.mimetype.startsWith('video/')
-        ? `memory://stream/${this.nextMediaId}.m3u8`
-        : null,
+      storageKey,
+      publicUrl: buildMediaPublicUrl(storageKey),
+      thumbnailUrl: input.mimetype.startsWith('image/') ? buildMediaPublicUrl(storageKey) : null,
+      hlsUrl: input.mimetype.startsWith('video/') ? buildMediaPublicUrl(storageKey) : null,
       status: 'READY' as const,
       processingError: null,
     };
@@ -647,18 +799,24 @@ export class SocialCoreStore {
       mimetype: input.mimetype,
       size: input.size,
       stored,
+      purpose: input.purpose,
     });
   }
 
   private addMediaRecord(input: {
+    id?: number;
     ownerUserId: number;
     filename: string;
     mimetype: string;
     size: number;
     stored: StoredMediaDescriptor;
+    purpose?: string;
+    contentType?: string | null;
+    contentId?: string | null;
+    uploadIdempotencyKey?: string | null;
   }): MediaRecord {
     const media = {
-      id: this.nextMediaId++,
+      id: input.id ?? this.nextMediaId++,
       ownerUserId: input.ownerUserId,
       filename: input.filename,
       mimetype: input.mimetype,
@@ -670,31 +828,171 @@ export class SocialCoreStore {
       status: input.stored.status,
       processingError: input.stored.processingError ?? null,
       createdAt: new Date(),
+      purpose: input.purpose ?? 'generic',
+      contentType: input.contentType ?? null,
+      contentId: input.contentId ?? null,
+      uploadIdempotencyKey: input.uploadIdempotencyKey ?? null,
     };
+    return this.cacheMediaRecord(media);
+  }
+
+  private cacheMediaRecord(media: MediaRecord): MediaRecord {
     this.media.set(media.id, media);
+    this.nextMediaId = Math.max(this.nextMediaId, media.id + 1);
     return media;
   }
+
+  private async persistMediaRecord(media: MediaRecord): Promise<MediaRecord> {
+    if (!this.mediaPrisma) return media;
+    const row = await this.mediaPrisma.media.create({
+      data: {
+        ownerUserId: media.ownerUserId,
+        filename: media.filename,
+        mimetype: media.mimetype,
+        size: media.size,
+        storageKey: media.storageKey,
+        url: media.url,
+        thumbnailUrl: media.thumbnailUrl,
+        hlsUrl: media.hlsUrl,
+        status: media.status as MediaStatus,
+        processingError: media.processingError,
+        purpose: media.purpose,
+        contentType: media.contentType,
+        contentId: media.contentId,
+        uploadIdempotencyKey: media.uploadIdempotencyKey,
+      },
+    });
+    return mapMediaRowToRecord(row);
+  }
+
+  private async loadPersistedMediaById(mediaId: number): Promise<MediaRecord | null> {
+    if (!this.mediaPrisma) return null;
+    const row = await this.mediaPrisma.media.findUnique({ where: { id: mediaId } });
+    if (!row) return null;
+    return this.cacheMediaRecord(mapMediaRowToRecord(row));
+  }
+
+  private async loadPersistedMediaByKey(
+    ownerUserId: number,
+    uploadIdempotencyKey: string,
+  ): Promise<MediaRecord | null> {
+    if (!this.mediaPrisma) return null;
+    const row = await this.mediaPrisma.media.findFirst({
+      where: { ownerUserId, uploadIdempotencyKey },
+    });
+    if (!row) return null;
+    return this.cacheMediaRecord(mapMediaRowToRecord(row));
+  }
+
+  /**
+   * Keyed by `${ownerUserId}:${idempotencyKey}` — a retried upload request
+   * (same user, same client-supplied key) returns the already-created media
+   * record instead of storing a duplicate file.
+   */
+  private readonly uploadIdempotencyKeys = new Map<string, number>();
 
   async uploadMedia(
     ownerUserId: number,
     input: UploadedMediaInput,
+    opts: {
+      contentType?: string | null;
+      contentId?: string | null;
+      idempotencyKey?: string | null;
+    } = {},
   ): Promise<SocialMediaUploadResult> {
+    const idempotencyKey = opts.idempotencyKey?.trim() || null;
+    if (idempotencyKey) {
+      const dedupeKey = `${ownerUserId}:${idempotencyKey}`;
+      const existingId = this.uploadIdempotencyKeys.get(dedupeKey);
+      if (existingId) {
+        const existing = this.media.get(existingId);
+        if (existing) return this.mediaToUploadResult(existing);
+        const persistedExisting = await this.loadPersistedMediaById(existingId);
+        if (persistedExisting) return this.mediaToUploadResult(persistedExisting);
+      }
+      const persistedByKey = await this.loadPersistedMediaByKey(ownerUserId, idempotencyKey);
+      if (persistedByKey) {
+        this.uploadIdempotencyKeys.set(dedupeKey, persistedByKey.id);
+        return this.mediaToUploadResult(persistedByKey);
+      }
+    }
+
     const stored = await this.storage.upload(input);
-    const media = this.addMediaRecord({
+    const mediaInput = {
       ownerUserId,
       filename: input.filename,
       mimetype: input.mimetype,
       size: input.size,
       stored,
+      purpose: input.purpose,
+      contentType: opts.contentType,
+      contentId: opts.contentId,
+      uploadIdempotencyKey: idempotencyKey,
+    };
+
+    const media = this.mediaPrisma
+      ? await this.persistUploadedMediaRecord(mediaInput)
+      : this.addMediaRecord(mediaInput);
+
+    if (this.mediaPrisma) {
+      this.cacheMediaRecord(media);
+    }
+
+    if (idempotencyKey) {
+      this.uploadIdempotencyKeys.set(`${ownerUserId}:${idempotencyKey}`, media.id);
+    }
+
+    return this.mediaToUploadResult(media);
+  }
+
+  private async persistUploadedMediaRecord(input: {
+    ownerUserId: number;
+    filename: string;
+    mimetype: string;
+    size: number;
+    stored: StoredMediaDescriptor;
+    purpose?: string;
+    contentType?: string | null;
+    contentId?: string | null;
+    uploadIdempotencyKey?: string | null;
+  }): Promise<MediaRecord> {
+    const row = await this.mediaPrisma!.media.create({
+      data: {
+        ownerUserId: input.ownerUserId,
+        filename: input.filename,
+        mimetype: input.mimetype,
+        size: input.size,
+        storageKey: input.stored.storageKey,
+        url: input.stored.publicUrl,
+        thumbnailUrl: input.stored.thumbnailUrl,
+        hlsUrl: input.stored.hlsUrl,
+        status: input.stored.status as MediaStatus,
+        processingError: input.stored.processingError,
+        purpose: input.purpose ?? 'generic',
+        contentType: input.contentType,
+        contentId: input.contentId,
+        uploadIdempotencyKey: input.uploadIdempotencyKey,
+      },
     });
+    return mapMediaRowToRecord(row);
+  }
+
+  private mediaToUploadResult(media: MediaRecord): SocialMediaUploadResult {
     return {
       id: media.id,
       url: media.url,
       hlsUrl: media.hlsUrl,
       mimetype: media.mimetype,
-      status: media.status,
+      status: toPublicMediaStatus(media.status),
       thumbnailUrl: media.thumbnailUrl,
     };
+  }
+
+  /** Media currently bound to a specific draft/content item — used for orphan detection/cleanup. */
+  listMediaByContent(contentType: string, contentId: string): MediaRecord[] {
+    return [...this.media.values()].filter(
+      (m) => m.contentType === contentType && m.contentId === contentId,
+    );
   }
 
   getUserById(userId: number): UserReferencePayload | null {
@@ -721,9 +1019,49 @@ export class SocialCoreStore {
     return null;
   }
 
-  resolveUserId(principal: SocialPrincipalLike): number | null {
-    const parsed = parseIntStrict(principal.sub);
-    return parsed && this.users.has(parsed) ? parsed : null;
+  async resolveUserId(principal: SocialPrincipalLike): Promise<number | null> {
+    const resolved = await this.identityResolver(principal);
+    if (!resolved || !Number.isFinite(resolved.id) || resolved.id <= 0) return null;
+    this.ensureUserShadow(resolved.id, resolved);
+    return resolved.id;
+  }
+
+  /** Auto-vivifies a minimal local user record the first time a resolved identity is seen. */
+  private ensureUserShadow(id: number, profile: ResolvedIdentity): void {
+    if (this.users.has(id)) return;
+    const fallbackHandle = `user${id}`;
+    const username =
+      (profile.username || fallbackHandle)
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '')
+        .slice(0, 30) || fallbackHandle;
+    this.users.set(id, {
+      id,
+      auth: { email: profile.email || '', phone: null },
+      profile: {
+        displayName: profile.displayName || profile.username || `User ${id}`,
+        username,
+        bio: null,
+        visibility: 'PUBLIC',
+        showEmail: false,
+        showPhone: false,
+        avatarMediaId: null,
+        coverMediaId: null,
+        education: null,
+        placeLive: null,
+        fansAndFriends: null,
+        from: null,
+        profileType: 'PERSONAL',
+        workStatus: null,
+        religiousStatus: null,
+        gender: null,
+        birthdate: null,
+        maritalStatus: null,
+        isLocked: false,
+      },
+      wallet: { points: 0, balance: 0, tier: null },
+      createdAt: new Date(),
+    });
   }
 
   getMedia(mediaId: number): SocialMediaLookupPayload | null {
@@ -1876,7 +2214,7 @@ export class SocialCoreStore {
       url: media.url,
       thumbnailUrl: media.thumbnailUrl,
       hlsUrl: media.hlsUrl,
-      status: media.status,
+      status: toPublicMediaStatus(media.status),
       processingError: media.processingError,
       createdAt: media.createdAt.toISOString(),
     };
@@ -2248,11 +2586,98 @@ export class SocialCoreStore {
   private friendKey(a: number, b: number): string {
     return a < b ? `${a}:${b}` : `${b}:${a}`;
   }
+
+  createStory(
+    userId: number,
+    mediaUrl: string,
+    mediaType: 'image' | 'video',
+    caption?: string | null,
+  ): StoryRecord {
+    const id = this.nextStoryId++;
+    const createdAt = new Date();
+    const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000); // 24 hours
+    const story: StoryRecord = {
+      id,
+      userId,
+      mediaUrl,
+      mediaType,
+      caption: caption || null,
+      createdAt,
+      expiresAt,
+      viewCount: 0,
+    };
+    this.stories.set(id, story);
+    this.storyViews.set(id, new Set<number>());
+    return story;
+  }
+
+  markStoryViewed(userId: number, storyId: number): void {
+    const story = this.stories.get(storyId);
+    if (!story) return;
+    const views = this.storyViews.get(storyId) || new Set<number>();
+    if (!views.has(userId)) {
+      views.add(userId);
+      this.storyViews.set(storyId, views);
+      story.viewCount = views.size;
+    }
+  }
+
+  deleteStory(userId: number, storyId: number): void {
+    const story = this.stories.get(storyId);
+    if (!story) throw new Error('Story not found');
+    if (story.userId !== userId) {
+      throw new Error('Forbidden');
+    }
+    this.stories.delete(storyId);
+    this.storyViews.delete(storyId);
+  }
+
+  sweepExpiredStories(): number {
+    const now = new Date();
+    let count = 0;
+    for (const [id, story] of this.stories.entries()) {
+      if (story.expiresAt <= now) {
+        this.stories.delete(id);
+        this.storyViews.delete(id);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  listStoriesFeed(userId: number): StoryFeedItem[] {
+    const now = new Date();
+    // Gather active stories
+    const activeStories = [...this.stories.values()].filter((s) => s.expiresAt > now);
+
+    return activeStories.map((story) => {
+      const user = this.users.get(story.userId);
+      const views = this.storyViews.get(story.id) || new Set<number>();
+      return {
+        id: story.id,
+        userId: String(story.userId),
+        userName: user?.profile.displayName || `User ${story.userId}`,
+        userAvatarUrl: user?.profile.avatarMediaId
+          ? this.mediaPayload(user.profile.avatarMediaId).url
+          : null,
+        mediaUrl: story.mediaUrl,
+        mediaType: story.mediaType,
+        caption: story.caption,
+        createdAt: story.createdAt.toISOString(),
+        expiresAt: story.expiresAt.toISOString(),
+        viewCount: story.viewCount,
+        isViewedByMe: views.has(userId),
+        isOwnStory: story.userId === userId,
+      };
+    });
+  }
 }
 
 export function createSocialCoreStore(
   storage: MediaStorageAdapter = new InMemoryMediaStorageAdapter(),
   notificationProvider: NotificationDeliveryProvider = NoopNotificationDeliveryProvider,
+  identityResolver: IdentityResolver = defaultIdentityResolver,
+  mediaPrisma: PrismaClient | null = null,
 ): SocialCoreStore {
-  return new SocialCoreStore(storage, notificationProvider);
+  return new SocialCoreStore(storage, notificationProvider, identityResolver, mediaPrisma);
 }

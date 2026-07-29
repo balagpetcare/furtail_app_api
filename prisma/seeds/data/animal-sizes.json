@@ -1,0 +1,52 @@
+[
+  {
+    "code": "XS",
+    "name": "Extra Small",
+    "minWeightKg": 0,
+    "maxWeightKg": 2,
+    "displayOrder": 1,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "S",
+    "name": "Small",
+    "minWeightKg": 2,
+    "maxWeightKg": 5,
+    "displayOrder": 2,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "M",
+    "name": "Medium",
+    "minWeightKg": 5,
+    "maxWeightKg": 15,
+    "displayOrder": 3,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "L",
+    "name": "Large",
+    "minWeightKg": 15,
+    "maxWeightKg": 30,
+    "displayOrder": 4,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "XL",
+    "name": "Extra Large",
+    "minWeightKg": 30,
+    "maxWeightKg": null,
+    "displayOrder": 5,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+]

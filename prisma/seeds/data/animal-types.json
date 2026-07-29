@@ -1,0 +1,123 @@
+[
+  {
+    "name": "Dog",
+    "categoryCode": "MAMMAL",
+    "code": "DOG",
+    "scientificName": "Canis lupus familiaris",
+    "icon": "🐕",
+    "nameBn": "কুকুর",
+    "displayOrder": 1,
+    "isActive": true
+  },
+  {
+    "name": "Cat",
+    "categoryCode": "MAMMAL",
+    "code": "CAT",
+    "scientificName": "Felis catus",
+    "icon": "🐈",
+    "nameBn": "বিড়াল",
+    "displayOrder": 2,
+    "isActive": true
+  },
+  {
+    "name": "Bird",
+    "categoryCode": "BIRD",
+    "code": "BIRD",
+    "scientificName": "Aves",
+    "icon": "🐦",
+    "nameBn": "পাখি",
+    "displayOrder": 3,
+    "isActive": true
+  },
+  {
+    "name": "Rabbit",
+    "categoryCode": "MAMMAL",
+    "code": "RABBIT",
+    "scientificName": "Oryctolagus cuniculus",
+    "icon": "🐰",
+    "nameBn": "খরগোশ",
+    "displayOrder": 4,
+    "isActive": true
+  },
+  {
+    "name": "Fish",
+    "categoryCode": "AQUATIC",
+    "code": "FISH",
+    "scientificName": "Actinopterygii",
+    "icon": "🐠",
+    "nameBn": "মাছ",
+    "displayOrder": 5,
+    "isActive": true
+  },
+  {
+    "name": "Reptile",
+    "categoryCode": "REPTILE",
+    "code": "REPTILE",
+    "scientificName": "Reptilia",
+    "icon": "🦎",
+    "nameBn": "সরীসৃপ",
+    "displayOrder": 6,
+    "isActive": true
+  },
+  {
+    "name": "Small Mammal",
+    "categoryCode": "MAMMAL",
+    "code": "SMALL_MAMMAL",
+    "scientificName": null,
+    "icon": "🐹",
+    "nameBn": "ছোট স্তন্যপায়ী প্রাণী",
+    "displayOrder": 7,
+    "isActive": true
+  },
+  {
+    "name": "Farm / Large Animal",
+    "categoryCode": "MAMMAL",
+    "code": "FARM_ANIMAL",
+    "scientificName": null,
+    "icon": "🐄",
+    "nameBn": "গবাদি পশু",
+    "displayOrder": 8,
+    "isActive": true
+  },
+  {
+    "name": "Other Animal",
+    "categoryCode": "OTHER_CATEGORY",
+    "code": "OTHER",
+    "scientificName": null,
+    "icon": "🐾",
+    "nameBn": "অন্যান্য প্রাণী",
+    "displayOrder": 9,
+    "isActive": true
+  },
+
+  {
+    "name": "Guinea Pig",
+    "categoryCode": "MAMMAL",
+    "code": "GUINEA_PIG",
+    "scientificName": "Cavia porcellus",
+    "icon": "🐹",
+    "nameBn": "গিনিপিগ",
+    "displayOrder": 10,
+    "isActive": true
+  },
+  {
+    "name": "Parrot",
+    "categoryCode": "BIRD",
+    "code": "PARROT",
+    "scientificName": "Psittacidae",
+    "icon": "🦜",
+    "nameBn": "টিয়া পাখি",
+    "displayOrder": 11,
+    "isActive": true
+  },
+  {
+    "name": "Pigeon",
+    "categoryCode": "BIRD",
+    "code": "PIGEON",
+    "scientificName": "Columba livia",
+    "icon": "🕊️",
+    "nameBn": "কবুতর",
+    "displayOrder": 12,
+    "isActive": true
+  }
+]

@@ -55,6 +55,95 @@ export class AppError extends Error {
     return new AppError(ErrorCode.AUTHORIZATION_DENIED, message, 403, details);
   }
 
+  static accessTokenExpired(message = 'The access token has expired', details?: unknown): AppError {
+    return new AppError(ErrorCode.ACCESS_TOKEN_EXPIRED, message, 401, details);
+  }
+
+  static tokenAudienceInvalid(message = 'Invalid audience claim', details?: unknown): AppError {
+    return new AppError(ErrorCode.TOKEN_AUDIENCE_INVALID, message, 401, details);
+  }
+
+  static mediaUploadForbidden(
+    message = 'You are not allowed to upload this media',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.MEDIA_UPLOAD_FORBIDDEN, message, 403, details);
+  }
+
+  static mediaTypeUnsupported(
+    message = 'This file type is not supported',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.MEDIA_TYPE_UNSUPPORTED, message, 415, details);
+  }
+
+  static mediaSizeExceeded(
+    message = 'This file exceeds the maximum allowed size',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.MEDIA_SIZE_EXCEEDED, message, 413, details);
+  }
+
+  static resourceOwnershipRequired(
+    message = 'You do not own this resource',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.RESOURCE_OWNERSHIP_REQUIRED, message, 403, details);
+  }
+
+  static countryNotFound(message = 'Country not found', details?: unknown): AppError {
+    return new AppError(ErrorCode.COUNTRY_NOT_FOUND, message, 404, details);
+  }
+
+  static locationNotFound(message = 'Location not found', details?: unknown): AppError {
+    return new AppError(ErrorCode.LOCATION_NOT_FOUND, message, 404, details);
+  }
+
+  static locationParentInvalid(message = 'Unknown parent location', details?: unknown): AppError {
+    return new AppError(ErrorCode.LOCATION_PARENT_INVALID, message, 404, details);
+  }
+
+  static animalTypeNotFound(message = 'Animal type not found', details?: unknown): AppError {
+    return new AppError(ErrorCode.ANIMAL_TYPE_NOT_FOUND, message, 404, details);
+  }
+
+  static animalBreedNotFound(message = 'Breed not found', details?: unknown): AppError {
+    return new AppError(ErrorCode.ANIMAL_BREED_NOT_FOUND, message, 404, details);
+  }
+
+  static animalBreedSpeciesMismatch(
+    message = 'This breed does not belong to the selected species',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.ANIMAL_BREED_SPECIES_MISMATCH, message, 422, details);
+  }
+
+  static fundraiserNotFound(message = 'Campaign not found', details?: unknown): AppError {
+    return new AppError(ErrorCode.FUNDRAISER_NOT_FOUND, message, 404, details);
+  }
+
+  static fundraiserNotPublic(
+    message = 'This fundraiser is not publicly available',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.FUNDRAISER_NOT_PUBLIC, message, 403, details);
+  }
+
+  static fundraiserAccessDenied(message = 'Campaign not found', details?: unknown): AppError {
+    return new AppError(ErrorCode.FUNDRAISER_ACCESS_DENIED, message, 403, details);
+  }
+
+  static fundraiserNotDonatable(
+    message = 'This fundraiser is not accepting donations',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.FUNDRAISER_NOT_DONATABLE, message, 422, details);
+  }
+
+  static fundraiserEditForbidden(message = 'Campaign not found', details?: unknown): AppError {
+    return new AppError(ErrorCode.FUNDRAISER_EDIT_FORBIDDEN, message, 403, details);
+  }
+
   static conflict(message: string, details?: unknown): AppError {
     return new AppError(ErrorCode.CONFLICT, message, 409, details);
   }
@@ -77,6 +166,76 @@ export class AppError extends Error {
 
   static serviceUnavailable(message = 'Service unavailable', details?: unknown): AppError {
     return new AppError(ErrorCode.SERVICE_UNAVAILABLE, message, 503, details);
+  }
+
+  static adoptionNotFound(message = 'Adoption listing not found', details?: unknown): AppError {
+    return new AppError(ErrorCode.ADOPTION_NOT_FOUND, message, 404, details);
+  }
+
+  static adoptionAccessDenied(message = 'Access denied', details?: unknown): AppError {
+    return new AppError(ErrorCode.ADOPTION_ACCESS_DENIED, message, 403, details);
+  }
+
+  static adoptionEditForbidden(message = 'Edit forbidden', details?: unknown): AppError {
+    return new AppError(ErrorCode.ADOPTION_EDIT_FORBIDDEN, message, 403, details);
+  }
+
+  static adoptionNotPublic(message = 'Listing not public', details?: unknown): AppError {
+    return new AppError(ErrorCode.ADOPTION_NOT_PUBLIC, message, 403, details);
+  }
+
+  static adoptionInvalidStatus(message = 'Invalid status transition', details?: unknown): AppError {
+    return new AppError(ErrorCode.ADOPTION_INVALID_STATUS, message, 409, details);
+  }
+
+  static adoptionValidationFailed(message = 'Validation failed', details?: unknown): AppError {
+    return new AppError(ErrorCode.ADOPTION_VALIDATION_FAILED, message, 422, details);
+  }
+
+  static adoptionMediaNotOwned(message = 'Media not owned', details?: unknown): AppError {
+    return new AppError(ErrorCode.ADOPTION_MEDIA_NOT_OWNED, message, 403, details);
+  }
+
+  static adoptionMediaAlreadyBound(
+    message = 'One or more media items are already attached to another adoption listing',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.ADOPTION_MEDIA_ALREADY_BOUND, message, 409, details);
+  }
+
+  static adoptionStatusTransitionInvalid(
+    message = 'Invalid status transition',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.ADOPTION_STATUS_TRANSITION_INVALID, message, 400, details);
+  }
+
+  static adoptionStatusChangeForbidden(
+    message = 'Adoption status change forbidden',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.ADOPTION_STATUS_CHANGE_FORBIDDEN, message, 403, details);
+  }
+
+  static adoptionAlreadyClosed(
+    message = 'Adoption listing is already closed',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.ADOPTION_ALREADY_CLOSED, message, 409, details);
+  }
+
+  static adoptionDateInvalid(
+    message = 'Invalid approximate date of birth',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.ADOPTION_DATE_INVALID, message, 422, details);
+  }
+
+  static adoptionLocationRequired(
+    message = 'Adoption location is required',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.ADOPTION_LOCATION_REQUIRED, message, 422, details);
   }
 
   static internal(message = 'Internal server error'): AppError {

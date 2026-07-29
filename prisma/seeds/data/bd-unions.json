@@ -1,0 +1,132 @@
+[
+  {
+    "code": "BD-DH-DA-DA-MO",
+    "nameEn": "Motijheel",
+    "nameBn": "মতিঝিল",
+    "upazilaId": 1,
+    "latitude": 23.7613,
+    "longitude": 90.3818,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-DH-DA-DA-PA",
+    "nameEn": "Paltan",
+    "nameBn": "পল্টন",
+    "upazilaId": 1,
+    "latitude": 23.755,
+    "longitude": 90.4,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-DH-DA-AD-AD",
+    "nameEn": "Adabor Union",
+    "nameBn": "আদাবর ইউনিয়ন",
+    "upazilaId": 2,
+    "latitude": 23.8,
+    "longitude": 90.35,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-DH-GA-GA-GA",
+    "nameEn": "Gazipur Sadar Union",
+    "nameBn": "গাজীপুর সদর ইউনিয়ন",
+    "upazilaId": 3,
+    "latitude": 24.0041,
+    "longitude": 90.4256,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-DH-NR-NR-NR",
+    "nameEn": "Narayanganj Sadar Union",
+    "nameBn": "নারায়ণগঞ্জ সদর ইউনিয়ন",
+    "upazilaId": 4,
+    "latitude": 23.6127,
+    "longitude": 90.4949,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-CH-CT-CT-CT",
+    "nameEn": "Chittagong Sadar Union",
+    "nameBn": "চট্টগ্রাম সদর ইউনিয়ন",
+    "upazilaId": 5,
+    "latitude": 22.3384,
+    "longitude": 91.8265,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-CH-CX-CX-CX",
+    "nameEn": "Cox's Bazar Sadar Union",
+    "nameBn": "কক্সবাজার সদর ইউনিয়ন",
+    "upazilaId": 6,
+    "latitude": 21.4515,
+    "longitude": 91.968,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-KH-KH-KH-KH",
+    "nameEn": "Khulna Sadar Union",
+    "nameBn": "খুলনা সদর ইউনিয়ন",
+    "upazilaId": 7,
+    "latitude": 22.8138,
+    "longitude": 89.1713,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-RJ-RJ-RJ-RJ",
+    "nameEn": "Rajshahi Sadar Union",
+    "nameBn": "রাজশাহী সদর ইউনিয়ন",
+    "upazilaId": 8,
+    "latitude": 24.3745,
+    "longitude": 88.6042,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-SY-SY-SY-SY",
+    "nameEn": "Sylhet Sadar Union",
+    "nameBn": "সিলেট সদর ইউনিয়ন",
+    "upazilaId": 9,
+    "latitude": 24.8949,
+    "longitude": 91.8687,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-BR-BR-BR-BR",
+    "nameEn": "Barisal Sadar Union",
+    "nameBn": "বরিশাল সদর ইউনিয়ন",
+    "upazilaId": 10,
+    "latitude": 22.701,
+    "longitude": 90.3535,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-RN-RN-RN-RN",
+    "nameEn": "Rangpur Sadar Union",
+    "nameBn": "রংপুর সদর ইউনিয়ন",
+    "upazilaId": 11,
+    "latitude": 25.7459,
+    "longitude": 89.25,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-MY-MY-MY-MY",
+    "nameEn": "Mymensingh Sadar Union",
+    "nameBn": "ময়মনসিংহ সদর ইউনিয়ন",
+    "upazilaId": 12,
+    "latitude": 24.7465,
+    "longitude": 90.4081,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+]

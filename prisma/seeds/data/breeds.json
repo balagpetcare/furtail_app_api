@@ -1,0 +1,797 @@
+[
+  {
+    "name": "German Shepherd",
+    "animalTypeCode": "DOG",
+    "code": "GERMAN_SHEPHERD",
+    "aliasNames": ["GSD", "Alsatian"],
+    "originCountry": "Germany",
+    "defaultSizeCode": "L",
+    "displayOrder": 1,
+    "isActive": true
+  },
+  {
+    "name": "Labrador",
+    "animalTypeCode": "DOG",
+    "code": "LABRADOR",
+    "aliasNames": ["Lab", "Labrador Retriever"],
+    "originCountry": "Canada",
+    "defaultSizeCode": "L",
+    "displayOrder": 2,
+    "isActive": true
+  },
+  {
+    "name": "Golden Retriever",
+    "animalTypeCode": "DOG",
+    "code": "GOLDEN_RETRIEVER",
+    "aliasNames": ["Golden", "Goldie"],
+    "originCountry": "Scotland",
+    "defaultSizeCode": "L",
+    "displayOrder": 3,
+    "isActive": true
+  },
+  {
+    "name": "Poodle",
+    "animalTypeCode": "DOG",
+    "code": "POODLE",
+    "aliasNames": ["Standard Poodle"],
+    "originCountry": "France",
+    "defaultSizeCode": "M",
+    "displayOrder": 4,
+    "isActive": true
+  },
+  {
+    "name": "Shih Tzu",
+    "animalTypeCode": "DOG",
+    "code": "SHIH_TZU",
+    "aliasNames": ["Lion Dog"],
+    "originCountry": "China",
+    "defaultSizeCode": "S",
+    "displayOrder": 5,
+    "isActive": true
+  },
+  {
+    "name": "Bulldog",
+    "animalTypeCode": "DOG",
+    "code": "BULLDOG",
+    "aliasNames": ["English Bulldog"],
+    "originCountry": "England",
+    "defaultSizeCode": "M",
+    "displayOrder": 6,
+    "isActive": true
+  },
+  {
+    "name": "Beagle",
+    "animalTypeCode": "DOG",
+    "code": "BEAGLE",
+    "aliasNames": [],
+    "originCountry": "England",
+    "defaultSizeCode": "M",
+    "displayOrder": 7,
+    "isActive": true
+  },
+  {
+    "name": "Rottweiler",
+    "animalTypeCode": "DOG",
+    "code": "ROTTWEILER",
+    "aliasNames": ["Rottie"],
+    "originCountry": "Germany",
+    "defaultSizeCode": "L",
+    "displayOrder": 8,
+    "isActive": true
+  },
+  {
+    "name": "Dachshund",
+    "animalTypeCode": "DOG",
+    "code": "DACHSHUND",
+    "aliasNames": ["Wiener Dog", "Sausage Dog"],
+    "originCountry": "Germany",
+    "defaultSizeCode": "S",
+    "displayOrder": 9,
+    "isActive": true
+  },
+  {
+    "name": "Chihuahua",
+    "animalTypeCode": "DOG",
+    "code": "CHIHUAHUA",
+    "aliasNames": [],
+    "originCountry": "Mexico",
+    "defaultSizeCode": "XS",
+    "displayOrder": 10,
+    "isActive": true
+  },
+  {
+    "name": "Bangladeshi Street Dog",
+    "animalTypeCode": "DOG",
+    "code": "DOG_LOCAL",
+    "aliasNames": ["Desi Dog", "Deshi Kukur"],
+    "originCountry": "Bangladesh",
+    "isLocal": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Mixed Breed",
+    "animalTypeCode": "DOG",
+    "code": "DOG_MIXED",
+    "aliasNames": ["Mutt", "Crossbreed"],
+    "isMixed": true,
+    "displayOrder": 91,
+    "isActive": true
+  },
+  {
+    "name": "Unknown",
+    "animalTypeCode": "DOG",
+    "code": "DOG_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 92,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "DOG",
+    "code": "DOG_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 93,
+    "isActive": true
+  },
+
+  {
+    "name": "Persian",
+    "animalTypeCode": "CAT",
+    "code": "PERSIAN",
+    "aliasNames": ["Persian Cat"],
+    "originCountry": "Iran",
+    "defaultSizeCode": "S",
+    "displayOrder": 1,
+    "isActive": true
+  },
+  {
+    "name": "Siamese",
+    "animalTypeCode": "CAT",
+    "code": "SIAMESE",
+    "aliasNames": ["Thai Cat"],
+    "originCountry": "Thailand",
+    "defaultSizeCode": "S",
+    "displayOrder": 2,
+    "isActive": true
+  },
+  {
+    "name": "Bengal",
+    "animalTypeCode": "CAT",
+    "code": "BENGAL",
+    "aliasNames": ["Bengal Cat"],
+    "originCountry": "United States",
+    "defaultSizeCode": "S",
+    "displayOrder": 3,
+    "isActive": true
+  },
+  {
+    "name": "British Shorthair",
+    "animalTypeCode": "CAT",
+    "code": "BRITISH_SHORTHAIR",
+    "aliasNames": ["BSH"],
+    "originCountry": "United Kingdom",
+    "defaultSizeCode": "S",
+    "displayOrder": 4,
+    "isActive": true
+  },
+  {
+    "name": "Maine Coon",
+    "animalTypeCode": "CAT",
+    "code": "MAINE_COON",
+    "aliasNames": [],
+    "originCountry": "United States",
+    "defaultSizeCode": "M",
+    "displayOrder": 5,
+    "isActive": true
+  },
+  {
+    "name": "Ragdoll",
+    "animalTypeCode": "CAT",
+    "code": "RAGDOLL",
+    "aliasNames": [],
+    "originCountry": "United States",
+    "defaultSizeCode": "M",
+    "displayOrder": 6,
+    "isActive": true
+  },
+  {
+    "name": "Bangladeshi Local Cat",
+    "animalTypeCode": "CAT",
+    "code": "CAT_LOCAL",
+    "aliasNames": ["Desi Cat", "Deshi Biral"],
+    "originCountry": "Bangladesh",
+    "isLocal": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Mixed Breed",
+    "animalTypeCode": "CAT",
+    "code": "CAT_MIXED",
+    "aliasNames": ["Crossbreed"],
+    "isMixed": true,
+    "displayOrder": 91,
+    "isActive": true
+  },
+  {
+    "name": "Unknown",
+    "animalTypeCode": "CAT",
+    "code": "CAT_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 92,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "CAT",
+    "code": "CAT_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 93,
+    "isActive": true
+  },
+
+  {
+    "name": "Budgerigar",
+    "animalTypeCode": "BIRD",
+    "code": "BUDGERIGAR",
+    "aliasNames": ["Budgie", "Parakeet"],
+    "originCountry": "Australia",
+    "displayOrder": 1,
+    "isActive": true
+  },
+  {
+    "name": "Cockatiel",
+    "animalTypeCode": "BIRD",
+    "code": "COCKATIEL",
+    "aliasNames": [],
+    "originCountry": "Australia",
+    "displayOrder": 2,
+    "isActive": true
+  },
+  {
+    "name": "Lovebird",
+    "animalTypeCode": "BIRD",
+    "code": "LOVEBIRD",
+    "aliasNames": [],
+    "originCountry": "Africa",
+    "displayOrder": 3,
+    "isActive": true
+  },
+  {
+    "name": "Canary",
+    "animalTypeCode": "BIRD",
+    "code": "CANARY",
+    "aliasNames": [],
+    "originCountry": "Spain",
+    "displayOrder": 4,
+    "isActive": true
+  },
+  {
+    "name": "Local/Indigenous",
+    "animalTypeCode": "BIRD",
+    "code": "BIRD_LOCAL",
+    "aliasNames": ["Deshi Pakhi"],
+    "originCountry": "Bangladesh",
+    "isLocal": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Mixed Breed",
+    "animalTypeCode": "BIRD",
+    "code": "BIRD_MIXED",
+    "aliasNames": [],
+    "isMixed": true,
+    "displayOrder": 91,
+    "isActive": true
+  },
+  {
+    "name": "Unknown",
+    "animalTypeCode": "BIRD",
+    "code": "BIRD_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 92,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "BIRD",
+    "code": "BIRD_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 93,
+    "isActive": true
+  },
+
+  {
+    "name": "Holland Lop",
+    "animalTypeCode": "RABBIT",
+    "code": "HOLLAND_LOP",
+    "aliasNames": [],
+    "originCountry": "Netherlands",
+    "displayOrder": 1,
+    "isActive": true
+  },
+  {
+    "name": "Netherland Dwarf",
+    "animalTypeCode": "RABBIT",
+    "code": "NETHERLAND_DWARF",
+    "aliasNames": [],
+    "originCountry": "Netherlands",
+    "displayOrder": 2,
+    "isActive": true
+  },
+  {
+    "name": "Angora",
+    "animalTypeCode": "RABBIT",
+    "code": "ANGORA_RABBIT",
+    "aliasNames": [],
+    "originCountry": "Turkey",
+    "displayOrder": 3,
+    "isActive": true
+  },
+  {
+    "name": "Rex",
+    "animalTypeCode": "RABBIT",
+    "code": "REX_RABBIT",
+    "aliasNames": [],
+    "originCountry": "France",
+    "displayOrder": 4,
+    "isActive": true
+  },
+  {
+    "name": "Local/Indigenous",
+    "animalTypeCode": "RABBIT",
+    "code": "RABBIT_LOCAL",
+    "aliasNames": ["Deshi Khorgosh"],
+    "originCountry": "Bangladesh",
+    "isLocal": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Mixed Breed",
+    "animalTypeCode": "RABBIT",
+    "code": "RABBIT_MIXED",
+    "aliasNames": [],
+    "isMixed": true,
+    "displayOrder": 91,
+    "isActive": true
+  },
+  {
+    "name": "Unknown",
+    "animalTypeCode": "RABBIT",
+    "code": "RABBIT_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 92,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "RABBIT",
+    "code": "RABBIT_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 93,
+    "isActive": true
+  },
+
+  {
+    "name": "Goldfish",
+    "animalTypeCode": "FISH",
+    "code": "GOLDFISH",
+    "aliasNames": [],
+    "originCountry": "China",
+    "displayOrder": 1,
+    "isActive": true
+  },
+  {
+    "name": "Betta",
+    "animalTypeCode": "FISH",
+    "code": "BETTA",
+    "aliasNames": ["Siamese Fighting Fish"],
+    "originCountry": "Thailand",
+    "displayOrder": 2,
+    "isActive": true
+  },
+  {
+    "name": "Guppy",
+    "animalTypeCode": "FISH",
+    "code": "GUPPY",
+    "aliasNames": [],
+    "originCountry": "South America",
+    "displayOrder": 3,
+    "isActive": true
+  },
+  {
+    "name": "Koi",
+    "animalTypeCode": "FISH",
+    "code": "KOI",
+    "aliasNames": [],
+    "originCountry": "Japan",
+    "displayOrder": 4,
+    "isActive": true
+  },
+  {
+    "name": "Local/Indigenous",
+    "animalTypeCode": "FISH",
+    "code": "FISH_LOCAL",
+    "aliasNames": ["Deshi Fish"],
+    "originCountry": "Bangladesh",
+    "isLocal": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Mixed Breed",
+    "animalTypeCode": "FISH",
+    "code": "FISH_MIXED",
+    "aliasNames": [],
+    "isMixed": true,
+    "displayOrder": 91,
+    "isActive": true
+  },
+  {
+    "name": "Unknown",
+    "animalTypeCode": "FISH",
+    "code": "FISH_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 92,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "FISH",
+    "code": "FISH_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 93,
+    "isActive": true
+  },
+
+  {
+    "name": "Red-Eared Slider",
+    "animalTypeCode": "REPTILE",
+    "code": "RED_EARED_SLIDER",
+    "aliasNames": ["Turtle"],
+    "originCountry": "United States",
+    "displayOrder": 1,
+    "isActive": true
+  },
+  {
+    "name": "Bearded Dragon",
+    "animalTypeCode": "REPTILE",
+    "code": "BEARDED_DRAGON",
+    "aliasNames": [],
+    "originCountry": "Australia",
+    "displayOrder": 2,
+    "isActive": true
+  },
+  {
+    "name": "Ball Python",
+    "animalTypeCode": "REPTILE",
+    "code": "BALL_PYTHON",
+    "aliasNames": ["Royal Python"],
+    "originCountry": "West Africa",
+    "displayOrder": 3,
+    "isActive": true
+  },
+  {
+    "name": "Iguana",
+    "animalTypeCode": "REPTILE",
+    "code": "IGUANA",
+    "aliasNames": [],
+    "originCountry": "Central America",
+    "displayOrder": 4,
+    "isActive": true
+  },
+  {
+    "name": "Local/Indigenous",
+    "animalTypeCode": "REPTILE",
+    "code": "REPTILE_LOCAL",
+    "aliasNames": [],
+    "originCountry": "Bangladesh",
+    "isLocal": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Mixed Breed",
+    "animalTypeCode": "REPTILE",
+    "code": "REPTILE_MIXED",
+    "aliasNames": [],
+    "isMixed": true,
+    "displayOrder": 91,
+    "isActive": true
+  },
+  {
+    "name": "Unknown",
+    "animalTypeCode": "REPTILE",
+    "code": "REPTILE_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 92,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "REPTILE",
+    "code": "REPTILE_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 93,
+    "isActive": true
+  },
+
+  {
+    "name": "Guinea Pig",
+    "animalTypeCode": "SMALL_MAMMAL",
+    "code": "SM_GUINEA_PIG",
+    "aliasNames": ["Cavy"],
+    "originCountry": "South America",
+    "displayOrder": 1,
+    "isActive": true
+  },
+  {
+    "name": "Hamster",
+    "animalTypeCode": "SMALL_MAMMAL",
+    "code": "HAMSTER",
+    "aliasNames": [],
+    "originCountry": "Syria",
+    "displayOrder": 2,
+    "isActive": true
+  },
+  {
+    "name": "Gerbil",
+    "animalTypeCode": "SMALL_MAMMAL",
+    "code": "GERBIL",
+    "aliasNames": [],
+    "originCountry": "Mongolia",
+    "displayOrder": 3,
+    "isActive": true
+  },
+  {
+    "name": "Ferret",
+    "animalTypeCode": "SMALL_MAMMAL",
+    "code": "FERRET",
+    "aliasNames": [],
+    "originCountry": "Europe",
+    "displayOrder": 4,
+    "isActive": true
+  },
+  {
+    "name": "Local/Indigenous",
+    "animalTypeCode": "SMALL_MAMMAL",
+    "code": "SM_LOCAL",
+    "aliasNames": [],
+    "originCountry": "Bangladesh",
+    "isLocal": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Mixed Breed",
+    "animalTypeCode": "SMALL_MAMMAL",
+    "code": "SM_MIXED",
+    "aliasNames": [],
+    "isMixed": true,
+    "displayOrder": 91,
+    "isActive": true
+  },
+  {
+    "name": "Unknown",
+    "animalTypeCode": "SMALL_MAMMAL",
+    "code": "SM_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 92,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "SMALL_MAMMAL",
+    "code": "SM_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 93,
+    "isActive": true
+  },
+
+  {
+    "name": "Cow",
+    "animalTypeCode": "FARM_ANIMAL",
+    "code": "COW",
+    "aliasNames": ["Goru"],
+    "originCountry": "Bangladesh",
+    "defaultSizeCode": "XL",
+    "displayOrder": 1,
+    "isActive": true
+  },
+  {
+    "name": "Goat",
+    "animalTypeCode": "FARM_ANIMAL",
+    "code": "GOAT",
+    "aliasNames": ["Chagol"],
+    "originCountry": "Bangladesh",
+    "defaultSizeCode": "M",
+    "displayOrder": 2,
+    "isActive": true
+  },
+  {
+    "name": "Buffalo",
+    "animalTypeCode": "FARM_ANIMAL",
+    "code": "BUFFALO",
+    "aliasNames": ["Moshi"],
+    "originCountry": "Bangladesh",
+    "defaultSizeCode": "XL",
+    "displayOrder": 3,
+    "isActive": true
+  },
+  {
+    "name": "Horse",
+    "animalTypeCode": "FARM_ANIMAL",
+    "code": "HORSE",
+    "aliasNames": ["Ghora"],
+    "originCountry": "Bangladesh",
+    "defaultSizeCode": "XL",
+    "displayOrder": 4,
+    "isActive": true
+  },
+  {
+    "name": "Duck",
+    "animalTypeCode": "FARM_ANIMAL",
+    "code": "DUCK",
+    "aliasNames": ["Hansh"],
+    "originCountry": "Bangladesh",
+    "displayOrder": 5,
+    "isActive": true
+  },
+  {
+    "name": "Chicken",
+    "animalTypeCode": "FARM_ANIMAL",
+    "code": "CHICKEN",
+    "aliasNames": ["Murgi"],
+    "originCountry": "Bangladesh",
+    "displayOrder": 6,
+    "isActive": true
+  },
+  {
+    "name": "Local/Indigenous",
+    "animalTypeCode": "FARM_ANIMAL",
+    "code": "FARM_LOCAL",
+    "aliasNames": ["Deshi"],
+    "originCountry": "Bangladesh",
+    "isLocal": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Mixed Breed",
+    "animalTypeCode": "FARM_ANIMAL",
+    "code": "FARM_MIXED",
+    "aliasNames": [],
+    "isMixed": true,
+    "displayOrder": 91,
+    "isActive": true
+  },
+  {
+    "name": "Unknown",
+    "animalTypeCode": "FARM_ANIMAL",
+    "code": "FARM_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 92,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "FARM_ANIMAL",
+    "code": "FARM_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 93,
+    "isActive": true
+  },
+
+  {
+    "name": "Local/Indigenous",
+    "animalTypeCode": "OTHER",
+    "code": "OTHER_LOCAL",
+    "aliasNames": [],
+    "isLocal": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Mixed Breed",
+    "animalTypeCode": "OTHER",
+    "code": "OTHER_MIXED",
+    "aliasNames": [],
+    "isMixed": true,
+    "displayOrder": 91,
+    "isActive": true
+  },
+  {
+    "name": "Unknown",
+    "animalTypeCode": "OTHER",
+    "code": "OTHER_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 92,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "OTHER",
+    "code": "OTHER_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 93,
+    "isActive": true
+  },
+
+  {
+    "name": "Unknown",
+    "animalTypeCode": "GUINEA_PIG",
+    "code": "GP_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "GUINEA_PIG",
+    "code": "GP_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 91,
+    "isActive": true
+  },
+
+  {
+    "name": "Unknown",
+    "animalTypeCode": "PARROT",
+    "code": "PARROT_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "PARROT",
+    "code": "PARROT_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 91,
+    "isActive": true
+  },
+
+  {
+    "name": "Unknown",
+    "animalTypeCode": "PIGEON",
+    "code": "PIGEON_UNKNOWN",
+    "aliasNames": ["Not sure"],
+    "isUnknown": true,
+    "displayOrder": 90,
+    "isActive": true
+  },
+  {
+    "name": "Other",
+    "animalTypeCode": "PIGEON",
+    "code": "PIGEON_OTHER",
+    "aliasNames": [],
+    "isOther": true,
+    "displayOrder": 91,
+    "isActive": true
+  }
+]

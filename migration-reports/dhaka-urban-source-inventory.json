@@ -1,0 +1,141 @@
+{
+  "generatedAt": "2026-07-28T08:27:50.154Z",
+  "repositories": {
+    "api": "D:/wpa/furtail/furtail_app_api",
+    "flutter": "D:/wpa/furtail/furtail_app"
+  },
+  "officialSources": [
+    {
+      "authority": "DNCC",
+      "title": "?????? ? ????? | ???? - ???? ????? ???? ?????????",
+      "url": "https://dncc.gov.bd/pages/static-pages/6922ded3933eb65569e1da8e",
+      "localFile": null,
+      "format": "html",
+      "publicationDate": "unknown (official page snippet published ~6.4 years ago)",
+      "coverage": "DNCC location page; ward and area section",
+      "currentStatus": "CURRENT_REFERENCE_WITH_PARTIAL_MACHINE_READABILITY",
+      "extractionMethod": "official-html-snippet",
+      "rawTextExcerpt": "????? ??????? ??? ??????? ??????? ??? ?????? ???.?? ???? ??? ???. ???? ????? ???? ??????????? ??????? ? ?????????: ?????-?."
+    },
+    {
+      "authority": "DSCC",
+      "title": "?????? - ???? | ???? ?????? ???? ?????????",
+      "url": "https://dscc.gov.bd/pages/static-pages/6922e104933eb65569e29a09",
+      "localFile": "D:/wpa/furtail/furtail_app_api/.tmp-dscc-location-live.html",
+      "format": "html",
+      "publicationDate": "2021-03-02 (page content update; site snapshot 2026-07-27)",
+      "coverage": "DSCC location landing page and embedded document links",
+      "currentStatus": "MIXED_CURRENT_AND_HISTORICAL",
+      "extractionMethod": "official-html-snapshot",
+      "rawTextExcerpt": "???? ?????? ???? ?????????"
+    },
+    {
+      "authority": "DSCC",
+      "title": "?????? - ???? | ???? ?????? ???? ????????? (embedded PDF)",
+      "url": "https://dscc.gov.bd/pages/static-pages/6922e104933eb65569e29a09",
+      "localFile": "D:/wpa/furtail/furtail_app_api/.tmp-dscc-location-current.pdf",
+      "format": "pdf",
+      "publicationDate": "2021-03-02 (page content update; site snapshot 2026-07-27)",
+      "coverage": "DSCC ward/locality tables across pages 1-6",
+      "currentStatus": "MIXED_CURRENT_AND_HISTORICAL",
+      "extractionMethod": "embedded-pdf-ocr-plus-layout-text",
+      "rawTextExcerpt": "* ঢাকা দক্ষিণ সিটি কর্পোরেশন এর অন্তর্গত অঞ্চল, ওয়ার্ড ও মহল্লা (সংশ্লিষ্ট গেজেট অনুযায়ী) অঞ্চল-১"
+    },
+    {
+      "authority": "DSCC",
+      "title": "?? ???? ???? ?????? ???? ?????????",
+      "url": "https://dscc.gov.bd/pages/static-pages/6922df02933eb65569e1f260",
+      "localFile": null,
+      "format": "html",
+      "publicationDate": "unknown",
+      "coverage": "Current DSCC overview counts",
+      "currentStatus": "CURRENT_REFERENCE",
+      "extractionMethod": "official-search-snippet",
+      "rawTextExcerpt": "????????? ????????? ??????, ?? ; ??????? ????????? (?????? ???????), ?? ??"
+    },
+    {
+      "authority": "DSCC",
+      "title": "??? /??????? | ???? - ???? ?????? ???? ?????????",
+      "url": "https://dscc.gov.bd/pages/static-pages/6922db5a933eb65569e099b7",
+      "localFile": null,
+      "format": "html",
+      "publicationDate": "unknown",
+      "coverage": "DSCC zone/ward navigation page",
+      "currentStatus": "REFERENCE_ONLY",
+      "extractionMethod": "official-search-snippet",
+      "rawTextExcerpt": "??? /??????? | ????"
+    }
+  ],
+  "derivativeArtifacts": [
+    {
+      "file": "D:/wpa/furtail/furtail_app_api/.tmp-dscc-lines.txt",
+      "source": "DSCC embedded PDF derivative",
+      "format": "text",
+      "extractionMethod": "layout-text-extract",
+      "usedForSeeding": false,
+      "reasonNotSeeded": "derived artifact only; authoritative source remains the embedded PDF and official page"
+    },
+    {
+      "file": "D:/wpa/furtail/furtail_app_api/.tmp-dscc-ocr-numbered.txt",
+      "source": "DSCC embedded PDF derivative",
+      "format": "text",
+      "extractionMethod": "ocr",
+      "usedForSeeding": false,
+      "reasonNotSeeded": "OCR output is review support only"
+    },
+    {
+      "file": "D:/wpa/furtail/furtail_app_api/.tmp-dscc-page-1.ocr.txt",
+      "source": "DSCC PDF page 1",
+      "format": "text",
+      "extractionMethod": "ocr",
+      "usedForSeeding": false,
+      "reasonNotSeeded": "OCR output is review support only",
+      "rawTextExcerpt": "* ঢাকা দক্ষিণ সিটি কর্পোরেশন এর অন্তর্গত অঞ্চল, ওয়ার্ড ও মহল্লা (সংশ্লিষ্ট গেজেট অনুযায়ী) অঞ্চল-১"
+    },
+    {
+      "file": "D:/wpa/furtail/furtail_app_api/.tmp-dscc-page-2.ocr.txt",
+      "source": "DSCC PDF page 2",
+      "format": "text",
+      "extractionMethod": "ocr",
+      "usedForSeeding": false,
+      "reasonNotSeeded": "OCR output is review support only",
+      "rawTextExcerpt": "অঞ্চল-৩ বীরবান কাচড়া, গজমহল রোড, হাজারীব র এলাকা, জিকাতলা (তিন মাজার], দক্ষিণ Sora, | ৪৮ 'সোনাতনগড় (মনেশ্বর), জিকাতলা ষ্টাফ কোয়ার্টার, মনেশ্বর (জিকাতলা), শিকারীটোলা, মনেশ্বর (১-৩৬),"
+    },
+    {
+      "file": "D:/wpa/furtail/furtail_app_api/.tmp-dscc-page-3.ocr.txt",
+      "source": "DSCC PDF page 3",
+      "format": "text",
+      "extractionMethod": "ocr",
+      "usedForSeeding": false,
+      "reasonNotSeeded": "OCR output is review support only",
+      "rawTextExcerpt": "* অঞ্চল-৪ | হাকিম হাবিবুর রহমান রোড, রবীন বোস স্ট্রীট, সোয়ারী ঘাট পূর্ব এবং পশ্চিম, রুই QW, বড় কাটারা, ছোট ৩০ কাটারা, দেবীদাস ঘাট লেন, কমিটি গঞ্জ, চম্পাতলী লেন, TE বেপারী লেন, রজনী বোস লেন, রায়"
+    },
+    {
+      "file": "D:/wpa/furtail/furtail_app_api/.tmp-dscc-page-4.ocr.txt",
+      "source": "DSCC PDF page 4",
+      "format": "text",
+      "extractionMethod": "ocr",
+      "usedForSeeding": false,
+      "reasonNotSeeded": "OCR output is review support only",
+      "rawTextExcerpt": "অঞ্চল-৫ কে.এম.দাস লেন, অভয়দাস লেন, টয়েনবি সার্কুলার রোড, জয়কালী মন্দির রোড Re নং- 5৯ হতে শেষ), ভগবত্তী ব্যানাজী রোড, ফোল্ডার BE (হোল্ডিং নং- ৯ হতে শেষ), হাটখোলা রোড (হোল্ডিং নং- ২-"
+    },
+    {
+      "file": "D:/wpa/furtail/furtail_app_api/.tmp-dscc-page-5.ocr.txt",
+      "source": "DSCC PDF page 5",
+      "format": "text",
+      "extractionMethod": "ocr",
+      "usedForSeeding": false,
+      "reasonNotSeeded": "OCR output is review support only",
+      "rawTextExcerpt": "অঞ্চল-৬ বিলুপ্ত ইউনিয়ন ও | ডিএসসিসি aes psy ply ওয়ার্ডের আওতাধীন এলাকা"
+    },
+    {
+      "file": "D:/wpa/furtail/furtail_app_api/.tmp-dscc-page-6.ocr.txt",
+      "source": "DSCC PDF page 6",
+      "format": "text",
+      "extractionMethod": "ocr",
+      "usedForSeeding": false,
+      "reasonNotSeeded": "OCR output is review support only",
+      "rawTextExcerpt": "অঞ্চল-৯ বিলুপ্ত ইউনিয়ন ও | ডিএসসিসি [—— ওয়ার্ড নং ওয়ার্ড নং"
+    }
+  ]
+}

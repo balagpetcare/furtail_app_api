@@ -224,4 +224,71 @@ describe('social core modules', () => {
     expect(ok.status).toBe(200);
     expect(denied.status).toBe(403);
   });
+
+  describe('Stories API', () => {
+    it('creates a new story, lists it in the feed, marks it viewed, and deletes it', async () => {
+      const { app } = buildApp();
+
+      // Get empty feed first (should return empty or seeded active stories)
+      const feedBefore = await request(app)
+        .get('/api/v1/stories/feed')
+        .set('Authorization', 'Bearer valid-token');
+      expect(feedBefore.status).toBe(200);
+      expect(Array.isArray(feedBefore.body.data.stories)).toBe(true);
+
+      // Create a story
+      const createRes = await request(app)
+        .post('/api/v1/stories')
+        .set('Authorization', 'Bearer valid-token')
+        .attach('media', Buffer.from('fake image content'), {
+          filename: 'story.jpg',
+          contentType: 'image/jpeg',
+        })
+        .field('caption', 'Test story caption');
+
+      expect(createRes.status).toBe(201);
+      // Wait, createStory returns { story: payload, data: payload }
+      // So createRes.body.data is the payload!
+      expect(createRes.body.data.story.caption).toBe('Test story caption');
+      expect(createRes.body.data.story.mediaType).toBe('image');
+      const storyId = createRes.body.data.story.id;
+
+      // Check feed contains the new story
+      const feedAfter = await request(app)
+        .get('/api/v1/stories/feed')
+        .set('Authorization', 'Bearer valid-token');
+      expect(feedAfter.status).toBe(200);
+      const createdStory = feedAfter.body.data.stories.find((s: any) => s.id === storyId);
+      expect(createdStory).toBeDefined();
+      expect(createdStory.isViewedByMe).toBe(false);
+
+      // Mark story viewed
+      const viewRes = await request(app)
+        .post(`/api/v1/stories/${storyId}/view`)
+        .set('Authorization', 'Bearer valid-token');
+      expect(viewRes.status).toBe(200);
+
+      // Check feed again to verify isViewedByMe is true
+      const feedAfterView = await request(app)
+        .get('/api/v1/stories/feed')
+        .set('Authorization', 'Bearer valid-token');
+      const viewedStory = feedAfterView.body.data.stories.find((s: any) => s.id === storyId);
+      expect(viewedStory.isViewedByMe).toBe(true);
+      expect(viewedStory.viewCount).toBe(1);
+
+      // Delete the story
+      const deleteRes = await request(app)
+        .delete(`/api/v1/stories/${storyId}`)
+        .set('Authorization', 'Bearer valid-token');
+      expect(deleteRes.status).toBe(200);
+
+      // Verify it's gone from the feed
+      const feedFinal = await request(app)
+        .get('/api/v1/stories/feed')
+        .set('Authorization', 'Bearer valid-token');
+      const deletedStory = feedFinal.body.data.stories.find((s: any) => s.id === storyId);
+
+      expect(deletedStory).toBeUndefined();
+    });
+  });
 });

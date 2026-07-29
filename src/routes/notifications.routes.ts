@@ -12,8 +12,11 @@ export interface NotificationsRoutesDeps {
   socialStore?: SocialCoreStore;
 }
 
-function readUserId(req: { principal?: { sub: string } }, store: SocialCoreStore): number {
-  const id = req.principal ? store.resolveUserId(req.principal) : null;
+async function readUserId(
+  req: { principal?: { sub: string; email?: string; name?: string } },
+  store: SocialCoreStore,
+): Promise<number> {
+  const id = req.principal ? await store.resolveUserId(req.principal) : null;
   if (!id) {
     throw AppError.authenticationRequired();
   }
@@ -46,7 +49,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications/settings',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       sendSuccess(res, store.getNotificationPreferences(userId), {
         requestId: req.requestId,
         correlationId: req.correlationId,
@@ -58,7 +61,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications/settings',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       const prefs = store.updateNotificationPreferences(userId, {
         allowEmail: req.body?.allowEmail,
         allowSms: req.body?.allowSms,
@@ -74,7 +77,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications/settings',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       const prefs = store.updateNotificationPreferences(userId, {
         allowEmail: req.body?.allowEmail,
         allowSms: req.body?.allowSms,
@@ -90,7 +93,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications/device-token',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       const token = String(req.body?.token ?? '').trim();
       if (!token) {
         throw AppError.validation('token is required');
@@ -116,7 +119,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications/device-token',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       const token = req.body?.token ? String(req.body.token).trim() : null;
       const platform = req.body?.platform ? String(req.body.platform).trim() : null;
       const provider = req.body?.provider ? String(req.body.provider).trim() : null;
@@ -129,7 +132,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       const limit = toPositiveInt(req.query.limit ?? 20, 'limit');
       const cursor = toOptionalPositiveInt(req.query.cursor);
       const payload = store.listNotifications(userId, limit, cursor);
@@ -141,7 +144,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications/unread-count',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       sendSuccess(
         res,
         { count: store.getUnreadNotificationCount(userId) },
@@ -154,7 +157,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications/count',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       sendSuccess(
         res,
         { count: store.getUnreadNotificationCount(userId) },
@@ -167,7 +170,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications/:id/read',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       const id = toPositiveInt(req.params.id, 'id');
       const ok = store.markNotificationRead(userId, id);
       if (!ok) {
@@ -185,7 +188,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications/:id/read',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       const id = toPositiveInt(req.params.id, 'id');
       const ok = store.markNotificationRead(userId, id);
       if (!ok) {
@@ -203,7 +206,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications/read-all',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       const updated = store.markAllNotificationsRead(userId);
       sendSuccess(res, { updated }, { requestId: req.requestId, correlationId: req.correlationId });
     }),
@@ -213,7 +216,7 @@ export function notificationsRoutes(deps: NotificationsRoutesDeps): Router {
     '/api/v1/notifications/read-all',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req, store);
+      const userId = await readUserId(req, store);
       const updated = store.markAllNotificationsRead(userId);
       sendSuccess(res, { updated }, { requestId: req.requestId, correlationId: req.correlationId });
     }),

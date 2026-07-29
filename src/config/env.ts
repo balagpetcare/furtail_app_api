@@ -18,9 +18,10 @@ const envSchema = z.object({
   CENTRAL_AUTH_AUDIENCE: z.string().trim().default('furtail-mobile'),
   CENTRAL_AUTH_CLIENT_ID: z.string().trim().default('furtail-mobile'),
   CENTRAL_AUTH_JWKS_URI: z.string().trim().optional().default(''),
+  CENTRAL_AUTH_JWT_SECRET: z.string().trim().optional().default(''),
   CENTRAL_AUTH_REQUIRED_CLAIMS: z
     .string()
-    .default('sub,iss,aud,exp,iat,client_id')
+    .default('sub,iss,aud,exp,iat')
     .transform((value) =>
       value
         .split(',')
@@ -55,6 +56,7 @@ export type Env = {
   CENTRAL_AUTH_AUDIENCE: string;
   CENTRAL_AUTH_CLIENT_ID: string;
   CENTRAL_AUTH_JWKS_URI: string;
+  CENTRAL_AUTH_JWT_SECRET: string;
   CENTRAL_AUTH_REQUIRED_CLAIMS: string[];
   CORS_ALLOWED_ORIGINS: string[];
   CORS_ALLOW_CREDENTIALS: boolean;
@@ -84,7 +86,39 @@ function loadEnv(): Env {
     console.error(`Environment validation failed:\n${issues}`);
     process.exit(1);
   }
-  return result.data;
+  const parsed = result.data;
+
+  if (parsed.NODE_ENV === 'production') {
+    const missing: string[] = [];
+    if (
+      !parsed.DATABASE_URL ||
+      parsed.DATABASE_URL.includes('localhost') ||
+      parsed.DATABASE_URL.includes('127.0.0.1')
+    ) {
+      missing.push('DATABASE_URL (must point to a production database host)');
+    }
+    if (!parsed.CENTRAL_AUTH_ISSUER || !parsed.CENTRAL_AUTH_ISSUER.startsWith('https://')) {
+      missing.push('CENTRAL_AUTH_ISSUER (must be a secure HTTPS url)');
+    }
+    if (!parsed.CENTRAL_AUTH_JWKS_URI || !parsed.CENTRAL_AUTH_JWKS_URI.startsWith('https://')) {
+      missing.push('CENTRAL_AUTH_JWKS_URI (must be a secure HTTPS url)');
+    }
+    if (!parsed.CENTRAL_AUTH_JWT_SECRET || parsed.CENTRAL_AUTH_JWT_SECRET.length < 16) {
+      missing.push('CENTRAL_AUTH_JWT_SECRET (must be a strong secret of at least 16 characters)');
+    }
+    if (parsed.CORS_ALLOWED_ORIGINS.length === 0) {
+      missing.push('CORS_ALLOWED_ORIGINS (must contain production domains)');
+    }
+
+    if (missing.length > 0) {
+      console.error(
+        `Production environment validation failed:\n${missing.map((m) => `  - ${m}`).join('\n')}`,
+      );
+      process.exit(1);
+    }
+  }
+
+  return parsed;
 }
 
 export const env: Env = loadEnv();

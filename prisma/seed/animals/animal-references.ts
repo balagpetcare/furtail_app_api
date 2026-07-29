@@ -1,165 +1,274 @@
-import { PrismaClient } from '@prisma/client';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { PrismaClient } from '@prisma/client';
 
 /**
- * Seed animal reference data (categories, types, sizes, colors, patterns, breeds)
- * Expected counts from legacy system:
- * - AnimalCategory: ~10
- * - AnimalType: ~100-200
- * - AnimalSize: ~10
- * - AnimalColor: ~20-30
- * - CoatPattern: ~15-25
- * - Breed: ~1,000-5,000 (varies by number of types)
+ * Canonical animal taxonomy seed — Category -> Type/Species -> Breed. Single
+ * source of truth for every module that needs animal reference data
+ * (adoption, lost-and-found, fundraising beneficiary type, etc.). Idempotent:
+ * every row is upserted by its unique key (`code` for category/type/size/
+ * color/pattern, `[name, animalTypeId]` for breed), so re-running never
+ * duplicates records and existing ids are preserved across runs.
  *
- * Status: PLACEHOLDER STRUCTURE
- * Actual data will be imported from legacy database or JSON seed files during DB Step 3.
+ * Data sources (prisma/seeds/data/):
+ * - animal-categories.json — top-level grouping (Mammals, Birds, ...)
+ * - animal-types.json      — the species/type selector Flutter shows
+ *   (Dog, Cat, Bird, Rabbit, Fish, Reptile, Small Mammal, Farm/Large
+ *   Animal, Other, plus a few finer-grained legacy types), by categoryCode
+ * - animal-sizes.json / animal-colors.json / coat-patterns.json — flat
+ *   reference lists, no parent
+ * - breeds.json — breed catalog, by animalTypeCode (+ optional
+ *   defaultSizeCode). Every species includes the four safe non-specific
+ *   choices (isLocal, isMixed, isUnknown, isOther).
  */
 
-export async function seedAnimalReferences(prisma: PrismaClient) {
-  console.log('Seeding animal reference data...');
+const DATA_DIR = path.join(__dirname, '..', '..', 'seeds', 'data');
 
-  // Check if data already exists (idempotent)
-  const categoryCount = await prisma.animalCategory.count();
-  if (categoryCount > 0) {
-    console.log(`  Skipping: ${categoryCount} categories already exist`);
-    return;
-  }
+function readJson<T>(file: string): T {
+  return JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), 'utf-8')) as T;
+}
 
-  // Seed animal categories (top-level taxonomy)
-  const categories = [
-    { code: 'MAMMAL', name: 'Mammals' },
-    { code: 'BIRD', name: 'Birds' },
-  ];
+interface CategoryRow {
+  code: string;
+  name: string;
+  nameBn?: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
 
-  const createdCategories = [];
-  for (const catData of categories) {
-    const cat = await prisma.animalCategory.upsert({
-      where: { code: catData.code },
-      update: {},
-      create: catData,
-    });
-    createdCategories.push(cat);
-  }
-  console.log(
-    `  Created ${createdCategories.length} categories (placeholder data for schema validation)`,
+interface TypeRow {
+  name: string;
+  nameBn?: string;
+  categoryCode?: string;
+  code: string;
+  scientificName?: string | null;
+  icon?: string | null;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+interface SizeRow {
+  code: string;
+  name: string;
+  minWeightKg?: number | null;
+  maxWeightKg?: number | null;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+interface ColorRow {
+  code: string;
+  name: string;
+  hexPreview?: string | null;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+interface PatternRow {
+  code: string;
+  name: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+interface BreedRow {
+  name: string;
+  nameBn?: string;
+  animalTypeCode: string;
+  code?: string;
+  aliasNames?: string[];
+  originCountry?: string | null;
+  defaultSizeCode?: string;
+  isMixed?: boolean;
+  isOther?: boolean;
+  isLocal?: boolean;
+  isUnknown?: boolean;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+async function idMapByCode(model: {
+  findMany: (args: {
+    select: { id: true; code: true };
+  }) => Promise<Array<{ id: number; code: string | null }>>;
+}): Promise<Map<string, number>> {
+  const rows = await model.findMany({ select: { id: true, code: true } });
+  return new Map(
+    rows
+      .filter((r): r is { id: number; code: string } => r.code !== null)
+      .map((r) => [r.code, r.id]),
   );
+}
 
-  // Seed animal types (species)
-  const animalTypes = [
-    {
-      name: 'Dog',
-      code: 'DOG',
-      categoryId: createdCategories.find((c) => c.code === 'MAMMAL')?.id,
-      scientificName: 'Canis lupus familiaris',
-      icon: '🐕',
-    },
-    {
-      name: 'Cat',
-      code: 'CAT',
-      categoryId: createdCategories.find((c) => c.code === 'MAMMAL')?.id,
-      scientificName: 'Felis catus',
-      icon: '🐈',
-    },
-  ];
+export async function seedAnimalReferences(prisma: PrismaClient): Promise<void> {
+  console.log('Seeding animal taxonomy reference data...');
 
-  const createdTypes = [];
-  for (const typeData of animalTypes) {
-    const type = await prisma.animalType.upsert({
-      where: { name: typeData.name },
-      update: {},
-      create: typeData,
-    });
-    createdTypes.push(type);
-  }
-  console.log(
-    `  Created ${createdTypes.length} animal types (placeholder data for schema validation)`,
-  );
-
-  // Seed animal sizes
-  const sizes = [
-    { code: 'XS', name: 'Extra Small', minWeightKg: 0, maxWeightKg: 2 },
-    { code: 'S', name: 'Small', minWeightKg: 2, maxWeightKg: 5 },
-    { code: 'M', name: 'Medium', minWeightKg: 5, maxWeightKg: 15 },
-    { code: 'L', name: 'Large', minWeightKg: 15, maxWeightKg: 30 },
-  ];
-
-  const createdSizes = [];
-  for (const sizeData of sizes) {
-    const size = await prisma.animalSize.upsert({
-      where: { code: sizeData.code },
-      update: {},
-      create: sizeData,
-    });
-    createdSizes.push(size);
-  }
-  console.log(`  Created ${createdSizes.length} sizes (placeholder data for schema validation)`);
-
-  // Seed animal colors
-  const colors = [
-    { code: 'BLACK', name: 'Black', hexPreview: '#000000' },
-    { code: 'WHITE', name: 'White', hexPreview: '#FFFFFF' },
-    { code: 'BROWN', name: 'Brown', hexPreview: '#8B4513' },
-  ];
-
-  for (const colorData of colors) {
-    await prisma.animalColor.upsert({
-      where: { code: colorData.code },
-      update: {},
-      create: colorData,
-    });
-  }
-  console.log(`  Created ${colors.length} colors (placeholder data for schema validation)`);
-
-  // Seed coat patterns
-  const patterns = [
-    { code: 'SOLID', name: 'Solid' },
-    { code: 'SPOTTED', name: 'Spotted' },
-    { code: 'STRIPED', name: 'Striped' },
-  ];
-
-  for (const patternData of patterns) {
-    await prisma.coatPattern.upsert({
-      where: { code: patternData.code },
-      update: {},
-      create: patternData,
-    });
-  }
-  console.log(
-    `  Created ${patterns.length} coat patterns (placeholder data for schema validation)`,
-  );
-
-  // Seed breeds (sample only; production will have ~1000+)
-  const dogType = createdTypes.find((t) => t.code === 'DOG');
-  const largeSize = createdSizes.find((s) => s.code === 'L');
-
-  if (dogType && largeSize) {
-    const breeds = [
-      {
-        name: 'German Shepherd',
-        animalTypeId: dogType.id,
-        code: 'GERMAN_SHEPHERD',
-        defaultSizeId: largeSize.id,
-        originCountry: 'Germany',
+  // --- Categories ------------------------------------------------------
+  const categories = readJson<CategoryRow[]>('animal-categories.json');
+  for (let i = 0; i < categories.length; i += 1) {
+    const c = categories[i]!;
+    await prisma.animalCategory.upsert({
+      where: { code: c.code },
+      update: { name: c.name, displayOrder: c.displayOrder ?? i, isActive: c.isActive ?? true },
+      create: {
+        code: c.code,
+        name: c.name,
+        displayOrder: c.displayOrder ?? i,
+        isActive: c.isActive ?? true,
       },
-      {
-        name: 'Labrador',
-        animalTypeId: dogType.id,
-        code: 'LABRADOR',
-        defaultSizeId: largeSize.id,
-        originCountry: 'Canada',
-      },
-    ];
+      select: { id: true },
+    });
+  }
+  const categoryIdByCode = await idMapByCode(prisma.animalCategory);
+  console.log(`  Categories: ${categories.length} upserted`);
 
-    for (const breedData of breeds) {
-      await prisma.breed.upsert({
-        where: {
-          name_animalTypeId: { name: breedData.name, animalTypeId: breedData.animalTypeId },
-        },
-        update: {},
-        create: breedData,
-      });
+  // --- Types / species ---------------------------------------------------
+  const types = readJson<TypeRow[]>('animal-types.json');
+  let typesSkipped = 0;
+  for (let i = 0; i < types.length; i += 1) {
+    const t = types[i]!;
+    const categoryId = t.categoryCode ? categoryIdByCode.get(t.categoryCode) : undefined;
+    if (t.categoryCode && !categoryId) {
+      console.warn(
+        `  ! ${t.code}: unknown categoryCode ${t.categoryCode} (seeding with no category)`,
+      );
+      typesSkipped += 1;
     }
-    console.log(`  Created ${breeds.length} breeds (placeholder data for schema validation)`);
+    await prisma.animalType.upsert({
+      where: { name: t.name },
+      update: {
+        code: t.code,
+        categoryId: categoryId ?? null,
+        scientificName: t.scientificName ?? null,
+        icon: t.icon ?? null,
+        displayOrder: t.displayOrder ?? i,
+        isActive: t.isActive ?? true,
+      },
+      create: {
+        name: t.name,
+        code: t.code,
+        categoryId: categoryId ?? null,
+        scientificName: t.scientificName ?? null,
+        icon: t.icon ?? null,
+        displayOrder: t.displayOrder ?? i,
+        isActive: t.isActive ?? true,
+      },
+      select: { id: true },
+    });
   }
+  const typeIdByCode = await idMapByCode(prisma.animalType);
+  console.log(
+    `  Types: ${types.length} upserted${typesSkipped ? `, ${typesSkipped} with an unresolved category` : ''}`,
+  );
 
-  console.log('  Note: Production animal data will be imported from legacy database');
+  // --- Sizes ---------------------------------------------------------------
+  const sizes = readJson<SizeRow[]>('animal-sizes.json');
+  for (let i = 0; i < sizes.length; i += 1) {
+    const s = sizes[i]!;
+    await prisma.animalSize.upsert({
+      where: { code: s.code },
+      update: {
+        name: s.name,
+        minWeightKg: s.minWeightKg ?? null,
+        maxWeightKg: s.maxWeightKg ?? null,
+        displayOrder: s.displayOrder ?? i,
+        isActive: s.isActive ?? true,
+      },
+      create: {
+        code: s.code,
+        name: s.name,
+        minWeightKg: s.minWeightKg ?? null,
+        maxWeightKg: s.maxWeightKg ?? null,
+        displayOrder: s.displayOrder ?? i,
+        isActive: s.isActive ?? true,
+      },
+    });
+  }
+  const sizeIdByCode = await idMapByCode(prisma.animalSize);
+  console.log(`  Sizes: ${sizes.length} upserted`);
+
+  // --- Colors ----------------------------------------------------------
+  const colors = readJson<ColorRow[]>('animal-colors.json');
+  for (let i = 0; i < colors.length; i += 1) {
+    const c = colors[i]!;
+    await prisma.animalColor.upsert({
+      where: { code: c.code },
+      update: {
+        name: c.name,
+        hexPreview: c.hexPreview ?? null,
+        displayOrder: c.displayOrder ?? i,
+        isActive: c.isActive ?? true,
+      },
+      create: {
+        code: c.code,
+        name: c.name,
+        hexPreview: c.hexPreview ?? null,
+        displayOrder: c.displayOrder ?? i,
+        isActive: c.isActive ?? true,
+      },
+    });
+  }
+  console.log(`  Colors: ${colors.length} upserted`);
+
+  // --- Coat patterns -----------------------------------------------------
+  const patterns = readJson<PatternRow[]>('coat-patterns.json');
+  for (let i = 0; i < patterns.length; i += 1) {
+    const p = patterns[i]!;
+    await prisma.coatPattern.upsert({
+      where: { code: p.code },
+      update: { name: p.name, displayOrder: p.displayOrder ?? i, isActive: p.isActive ?? true },
+      create: {
+        code: p.code,
+        name: p.name,
+        displayOrder: p.displayOrder ?? i,
+        isActive: p.isActive ?? true,
+      },
+    });
+  }
+  console.log(`  Coat patterns: ${patterns.length} upserted`);
+
+  // --- Breeds ------------------------------------------------------------
+  const breeds = readJson<BreedRow[]>('breeds.json');
+  let breedsSeeded = 0;
+  let breedsSkipped = 0;
+  for (let i = 0; i < breeds.length; i += 1) {
+    const b = breeds[i]!;
+    const animalTypeId = typeIdByCode.get(b.animalTypeCode);
+    if (!animalTypeId) {
+      console.warn(`  ! Skipping breed ${b.name}: unknown animalTypeCode ${b.animalTypeCode}`);
+      breedsSkipped += 1;
+      continue;
+    }
+    const defaultSizeId = b.defaultSizeCode ? sizeIdByCode.get(b.defaultSizeCode) : undefined;
+    if (b.defaultSizeCode && !defaultSizeId) {
+      console.warn(
+        `  ! Breed ${b.name}: unknown defaultSizeCode ${b.defaultSizeCode} (seeding with no size)`,
+      );
+    }
+    const shared = {
+      nameBn: b.nameBn ?? null,
+      code: b.code ?? null,
+      aliasNames: b.aliasNames ?? [],
+      originCountry: b.originCountry ?? null,
+      defaultSizeId: defaultSizeId ?? null,
+      isMixed: b.isMixed ?? false,
+      isOther: b.isOther ?? false,
+      isLocal: b.isLocal ?? false,
+      isUnknown: b.isUnknown ?? false,
+      displayOrder: b.displayOrder ?? i,
+      isActive: b.isActive ?? true,
+    };
+    await prisma.breed.upsert({
+      where: { name_animalTypeId: { name: b.name, animalTypeId } },
+      update: shared,
+      create: { name: b.name, animalTypeId, ...shared },
+      select: { id: true },
+    });
+    breedsSeeded += 1;
+  }
+  console.log(
+    `  Breeds: ${breedsSeeded} upserted${breedsSkipped ? `, ${breedsSkipped} skipped (unresolved species)` : ''}`,
+  );
+
+  console.log('Animal taxonomy reference data seeded.');
 }

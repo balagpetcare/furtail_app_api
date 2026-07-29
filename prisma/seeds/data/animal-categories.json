@@ -1,0 +1,38 @@
+[
+  {
+    "code": "MAMMAL",
+    "name": "Mammals",
+    "nameBn": "স্তন্যপায়ী প্রাণী",
+    "displayOrder": 1,
+    "isActive": true
+  },
+  { "code": "BIRD", "name": "Birds", "nameBn": "পাখি", "displayOrder": 2, "isActive": true },
+  {
+    "code": "REPTILE",
+    "name": "Reptiles",
+    "nameBn": "সরীসৃপ",
+    "displayOrder": 3,
+    "isActive": true
+  },
+  {
+    "code": "AQUATIC",
+    "name": "Aquatic Animals",
+    "nameBn": "জলজ প্রাণী",
+    "displayOrder": 4,
+    "isActive": true
+  },
+  {
+    "code": "INSECT",
+    "name": "Insects",
+    "nameBn": "পোকামাকড়",
+    "displayOrder": 5,
+    "isActive": true
+  },
+  {
+    "code": "OTHER_CATEGORY",
+    "name": "Other",
+    "nameBn": "অন্যান্য",
+    "displayOrder": 6,
+    "isActive": true
+  }
+]

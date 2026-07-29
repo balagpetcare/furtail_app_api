@@ -1,0 +1,232 @@
+[
+  {
+    "code": "BD-DH-DA",
+    "nameEn": "Dhaka",
+    "nameBn": "ঢাকা",
+    "divisionId": 1,
+    "latitude": 23.8103,
+    "longitude": 90.4125,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-DH-GA",
+    "nameEn": "Gazipur",
+    "nameBn": "গাজীপুর",
+    "divisionId": 1,
+    "latitude": 24.0041,
+    "longitude": 90.4256,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-DH-NR",
+    "nameEn": "Narayanganj",
+    "nameBn": "নারায়ণগঞ্জ",
+    "divisionId": 1,
+    "latitude": 23.6127,
+    "longitude": 90.4949,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-DH-SH",
+    "nameEn": "Shariatpur",
+    "nameBn": "শরীয়তপুর",
+    "divisionId": 1,
+    "latitude": 23.2416,
+    "longitude": 90.2706,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-DH-RJ",
+    "nameEn": "Rajbari",
+    "nameBn": "রাজবাড়ী",
+    "divisionId": 1,
+    "latitude": 23.7461,
+    "longitude": 89.5498,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-CH-CT",
+    "nameEn": "Chittagong",
+    "nameBn": "চট্টগ্রাম",
+    "divisionId": 2,
+    "latitude": 22.3384,
+    "longitude": 91.8265,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-CH-CX",
+    "nameEn": "Cox's Bazar",
+    "nameBn": "কক্সবাজার",
+    "divisionId": 2,
+    "latitude": 21.4515,
+    "longitude": 91.968,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-CH-KM",
+    "nameEn": "Khagrachhari",
+    "nameBn": "খাগ্রাছড়ি",
+    "divisionId": 2,
+    "latitude": 22.4769,
+    "longitude": 91.985,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-CH-RN",
+    "nameEn": "Rangamati",
+    "nameBn": "রাঙ্গামাটি",
+    "divisionId": 2,
+    "latitude": 22.6505,
+    "longitude": 92.17,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-KH-KH",
+    "nameEn": "Khulna",
+    "nameBn": "খুলনা",
+    "divisionId": 3,
+    "latitude": 22.8138,
+    "longitude": 89.1713,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-KH-BA",
+    "nameEn": "Bagerhat",
+    "nameBn": "বাগেরহাট",
+    "divisionId": 3,
+    "latitude": 22.6514,
+    "longitude": 89.7839,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-KH-SA",
+    "nameEn": "Satkhira",
+    "nameBn": "সাতক্ষীরা",
+    "divisionId": 3,
+    "latitude": 22.7185,
+    "longitude": 89.0705,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-RJ-RJ",
+    "nameEn": "Rajshahi",
+    "nameBn": "রাজশাহী",
+    "divisionId": 4,
+    "latitude": 24.3745,
+    "longitude": 88.6042,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-RJ-NW",
+    "nameEn": "Natore",
+    "nameBn": "নাটোর",
+    "divisionId": 4,
+    "latitude": 24.4213,
+    "longitude": 88.9759,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-RJ-NP",
+    "nameEn": "Naogaon",
+    "nameBn": "নওগাঁ",
+    "divisionId": 4,
+    "latitude": 24.8625,
+    "longitude": 88.1381,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-SY-SY",
+    "nameEn": "Sylhet",
+    "nameBn": "সিলেট",
+    "divisionId": 5,
+    "latitude": 24.8949,
+    "longitude": 91.8687,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-SY-MC",
+    "nameEn": "Moulvibazar",
+    "nameBn": "মৌলভীবাজার",
+    "divisionId": 5,
+    "latitude": 24.4834,
+    "longitude": 91.5466,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-BR-BR",
+    "nameEn": "Barisal",
+    "nameBn": "বরিশাল",
+    "divisionId": 6,
+    "latitude": 22.701,
+    "longitude": 90.3535,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-BR-JP",
+    "nameEn": "Jhalokati",
+    "nameBn": "ঝালকাঠি",
+    "divisionId": 6,
+    "latitude": 22.6344,
+    "longitude": 90.2006,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-RN-RN",
+    "nameEn": "Rangpur",
+    "nameBn": "রংপুর",
+    "divisionId": 7,
+    "latitude": 25.7459,
+    "longitude": 89.25,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-RN-DI",
+    "nameEn": "Dinajpur",
+    "nameBn": "দিনাজপুর",
+    "divisionId": 7,
+    "latitude": 25.6282,
+    "longitude": 88.639,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-MY-MY",
+    "nameEn": "Mymensingh",
+    "nameBn": "ময়মনসিংহ",
+    "divisionId": 8,
+    "latitude": 24.7465,
+    "longitude": 90.4081,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "code": "BD-MY-JM",
+    "nameEn": "Jamalpur",
+    "nameBn": "জামালপুর",
+    "divisionId": 8,
+    "latitude": 24.9144,
+    "longitude": 90.9469,
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+]

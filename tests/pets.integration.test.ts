@@ -145,7 +145,13 @@ describe('pet contracts', () => {
     expect(profile.status).toBe(200);
     expect(profile.body.data.name).toBe('Nova');
     expect(profile.body.data.weightKg).toBe(12.1);
-    expect(profile.body.data.photoUrl).toContain('memory://media/');
+    const photoUrl = profile.body.data.photoUrl as string;
+    expect(photoUrl).toMatch(/^\/api\/v1\/media\/\d+\/[^/]+\/nova\.jpg$/);
+    expect(photoUrl).not.toContain('memory://');
+    expect(photoUrl).not.toContain('://');
+    expect(photoUrl).not.toContain('..');
+    expect(photoUrl).not.toMatch(/^file:/i);
+    expect(photoUrl).not.toMatch(/^[A-Za-z]:\\/);
 
     const medical = await request(app)
       .get(`/api/v1/user/pets/${petId}/medical-history`)

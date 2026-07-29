@@ -14,24 +14,28 @@ interface SeedFile {
 }
 
 const seedFiles: SeedFile[] = [
-  // Location files
-  { name: 'bd-divisions.json', path: 'prisma/seeds/data/bd-divisions.json', expectedCount: 8 },
-  { name: 'bd-districts.json', path: 'prisma/seeds/data/bd-districts.json', expectedCount: 64 },
-  { name: 'bd-upazilas.json', path: 'prisma/seeds/data/bd-upazilas.json', expectedCount: 491 },
-  { name: 'bd-unions.json', path: 'prisma/seeds/data/bd-unions.json', expectedCount: 4554 },
-  { name: 'bd-areas.json', path: 'prisma/seeds/data/bd-areas.json' }, // TBD count
+  // Location files (canonical — see prisma/seed/locations/bd-locations.ts)
+  { name: 'bd.country.json', path: 'prisma/seeds/data/bd.country.json', expectedCount: 1 },
+  { name: 'bd.divisions.json', path: 'prisma/seeds/data/bd.divisions.json', expectedCount: 8 },
+  { name: 'bd.districts.json', path: 'prisma/seeds/data/bd.districts.json', expectedCount: 64 },
+  { name: 'bd.upazilas.json', path: 'prisma/seeds/data/bd.upazilas.json', expectedCount: 495 },
+  // Union-level rows, keyed by upazilaCode — seeded into BdUnion (see bd-locations.ts).
+  { name: 'bd.areas.json', path: 'prisma/seeds/data/bd.areas.json', expectedCount: 4540 },
+  // Reviewed Dhaka urban mix: current DNCC, historical DSCC, and a few
+  // rural/locality carry-forward rows. See migration report for details.
+  { name: 'bd.wards-and-cc.json', path: 'prisma/seeds/data/bd.wards-and-cc.json' }, // 74 rows
 
-  // Animal reference files
+  // Animal reference files (canonical — see prisma/seed/animals/animal-references.ts)
   {
     name: 'animal-categories.json',
     path: 'prisma/seeds/data/animal-categories.json',
-    expectedCount: 10,
+    expectedCount: 6,
   },
-  { name: 'animal-types.json', path: 'prisma/seeds/data/animal-types.json', expectedCount: 100 }, // ~100-200
-  { name: 'animal-sizes.json', path: 'prisma/seeds/data/animal-sizes.json', expectedCount: 10 },
-  { name: 'animal-colors.json', path: 'prisma/seeds/data/animal-colors.json', expectedCount: 20 }, // ~20-30
-  { name: 'coat-patterns.json', path: 'prisma/seeds/data/coat-patterns.json', expectedCount: 15 }, // ~15-25
-  { name: 'breeds.json', path: 'prisma/seeds/data/breeds.json', expectedCount: 1000 }, // ~1000-5000
+  { name: 'animal-types.json', path: 'prisma/seeds/data/animal-types.json', expectedCount: 12 },
+  { name: 'animal-sizes.json', path: 'prisma/seeds/data/animal-sizes.json', expectedCount: 5 },
+  { name: 'animal-colors.json', path: 'prisma/seeds/data/animal-colors.json', expectedCount: 8 },
+  { name: 'coat-patterns.json', path: 'prisma/seeds/data/coat-patterns.json', expectedCount: 7 },
+  { name: 'breeds.json', path: 'prisma/seeds/data/breeds.json', expectedCount: 84 },
 ];
 
 function validateSeedFile(file: SeedFile): {

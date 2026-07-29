@@ -19,6 +19,11 @@ import {
   createFundraisingStore,
   type FundraisingStore,
 } from './modules/fundraising/fundraising-store';
+import { AdoptionStore } from './modules/adoption/adoption-store';
+import { getPrisma } from './infrastructure/db/prisma-client';
+import { createLocationStore, type LocationStore } from './modules/locations/location-store';
+import { createPrismaLocationDataSource } from './modules/locations/prisma-location-data-source';
+import type { AnimalTaxonomyStore } from './modules/animals/animal-taxonomy-store';
 
 export interface AppDependencies {
   databaseReadiness?: DatabaseReadinessService;
@@ -26,6 +31,9 @@ export interface AppDependencies {
   socialStore?: SocialCoreStore;
   petClient?: PetContractClient;
   fundraisingStore?: FundraisingStore;
+  adoptionStore?: AdoptionStore;
+  locationStore?: LocationStore;
+  animalTaxonomyStore?: AnimalTaxonomyStore;
 }
 
 /**
@@ -58,9 +66,17 @@ export function createAppWithDependencies(deps: AppDependencies): Express {
   const app = express();
   const databaseReadiness = deps.databaseReadiness ?? createDatabaseReadinessService();
   const authVerifier = deps.authVerifier ?? createCentralAuthVerifier();
-  const socialStore = deps.socialStore ?? createSocialCoreStore();
+  const hasDatabase = Boolean(env.DATABASE_URL);
+  const prisma = hasDatabase ? getPrisma() : null;
+  const socialStore = deps.socialStore ?? createSocialCoreStore(undefined, undefined, undefined, prisma);
   const petClient = deps.petClient ?? createInMemoryPetClient(socialStore);
   const fundraisingStore = deps.fundraisingStore ?? createFundraisingStore(socialStore);
+  const adoptionStore =
+    deps.adoptionStore ??
+    (prisma ? new AdoptionStore(prisma, socialStore) : createNoopAdoptionStore());
+  const locationStore =
+    deps.locationStore ??
+    (prisma ? createLocationStore(createPrismaLocationDataSource(prisma)) : createNoopLocationStore());
 
   // Foundation-level middleware only; no business routes are registered.
   app.disable('x-powered-by');
@@ -96,6 +112,9 @@ export function createAppWithDependencies(deps: AppDependencies): Express {
       socialStore,
       petClient,
       fundraisingStore,
+      adoptionStore,
+      locationStore,
+      animalTaxonomyStore: deps.animalTaxonomyStore,
     }),
   );
 
@@ -103,4 +122,56 @@ export function createAppWithDependencies(deps: AppDependencies): Express {
   app.use(errorHandler());
 
   return app;
+}
+
+function createNoopLocationStore(): LocationStore {
+  const emptyPage = <T>(items: T[] = []) => ({
+    items,
+    total: items.length,
+    page: 1,
+    pageSize: Math.max(items.length, 1),
+  });
+
+  return {
+    resolveCountryByIso2: async () => ({
+      id: 1,
+      iso2: 'BD',
+      iso3: 'BGD',
+      name: 'Bangladesh',
+      nameBn: null,
+      sortOrder: 0,
+    }),
+    listCountries: async () => [
+      {
+        id: 1,
+        iso2: 'BD',
+        iso3: 'BGD',
+        name: 'Bangladesh',
+        nameBn: null,
+        sortOrder: 0,
+      },
+    ],
+    listDivisions: async () => emptyPage(),
+    listDistricts: async () => emptyPage(),
+    listUpazilas: async () => emptyPage(),
+    listUnions: async () => emptyPage(),
+    listAreas: async () => emptyPage(),
+    listCityCorporations: async () => emptyPage(),
+    listZones: async () => emptyPage(),
+    listCcAreas: async () => emptyPage(),
+    getAreaById: async () => null,
+  } as unknown as LocationStore;
+}
+
+function createNoopAdoptionStore(): AdoptionStore {
+  return new Proxy(
+    {},
+    {
+      get() {
+        return async () => {
+          throw AppError.databaseUnavailable('Adoption workflow requires a database');
+        };
+      },
+    },
+  ) as unknown as AdoptionStore;
 }

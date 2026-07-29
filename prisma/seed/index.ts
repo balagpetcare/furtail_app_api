@@ -1,27 +1,25 @@
-import { PrismaClient } from '@prisma/client';
-import { seedBdLocations } from './locations/bd-locations';
 import { seedAnimalReferences } from './animals/animal-references';
+import { seedBdLocations } from './locations/bd-locations';
+import { disconnectPrisma, getPrisma } from '../../src/infrastructure/db/prisma-client';
 
-const prisma = new PrismaClient();
+const prisma = getPrisma();
 
 async function main() {
   console.log('Starting reference data seeding...');
 
   try {
-    // Seed Bangladesh locations
     await seedBdLocations(prisma);
-    console.log('✓ Bangladesh locations seeded');
+    console.log('Bangladesh locations seeded');
 
-    // Seed animal reference data
     await seedAnimalReferences(prisma);
-    console.log('✓ Animal reference data seeded');
+    console.log('Animal reference data seeded');
 
-    console.log('✓ All reference data seeded successfully');
+    console.log('All reference data seeded successfully');
   } catch (error) {
-    console.error('✗ Seeding failed:', error);
+    console.error('Seeding failed:', error);
     throw error;
   } finally {
-    await prisma.$disconnect();
+    await disconnectPrisma();
   }
 }
 

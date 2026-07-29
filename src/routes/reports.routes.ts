@@ -12,8 +12,11 @@ export interface ReportsRoutesDeps {
   socialStore?: SocialCoreStore;
 }
 
-function readUserId(req: { principal?: { sub: string } }, store: SocialCoreStore): number {
-  const id = req.principal ? store.resolveUserId(req.principal) : null;
+async function readUserId(
+  req: { principal?: { sub: string; email?: string; name?: string } },
+  store: SocialCoreStore,
+): Promise<number> {
+  const id = req.principal ? await store.resolveUserId(req.principal) : null;
   if (!id) {
     throw AppError.authenticationRequired();
   }
@@ -40,7 +43,7 @@ export function reportsRoutes(deps: ReportsRoutesDeps): Router {
     '/api/v1/reports/reasons',
     required,
     asyncHandler(async (req, res) => {
-      readUserId(req, store);
+      await readUserId(req, store);
       const type = String(req.query.type ?? '').trim();
       const reasons = store.listReportReasons(type);
       sendSuccess(
@@ -55,7 +58,7 @@ export function reportsRoutes(deps: ReportsRoutesDeps): Router {
     '/api/v1/reports',
     required,
     asyncHandler(async (req, res) => {
-      const reporterId = readUserId(req, store);
+      const reporterId = await readUserId(req, store);
       const type = String(req.body?.type ?? '').trim();
       const targetId = toPositiveInt(req.body?.targetId, 'targetId');
       const reasonCode = String(req.body?.reasonCode ?? '').trim();

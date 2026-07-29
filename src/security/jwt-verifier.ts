@@ -1,4 +1,4 @@
-import { createPublicKey, createVerify, type KeyObject } from 'node:crypto';
+import { createPublicKey, createVerify, createHmac, type KeyObject } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { env } from '../config/env';
@@ -35,6 +35,7 @@ export interface JwtVerifierConfig {
   audience: string;
   clientId: string;
   jwksUri: string;
+  jwtSecret?: string;
   requiredClaims: string[];
   clockToleranceSeconds: number;
   fetchJwks?: (jwksUri: string) => Promise<JwksResponse>;
@@ -51,19 +52,27 @@ export class CentralAuthJwtVerifier implements TokenVerifier {
   async verifyAccessToken(token: string): Promise<AuthenticatedPrincipal> {
     const tokenParts = parseJwt(token);
     const alg = tokenParts.header.alg;
-    if (!alg || !['RS256', 'ES256'].includes(alg)) {
+    if (!alg) {
+      throw AppError.authenticationInvalid('Missing token signature algorithm');
+    }
+
+    if (alg === 'HS256' && this.config.jwtSecret) {
+      if (!verifyHsSignature(tokenParts, this.config.jwtSecret, alg)) {
+        throw AppError.authenticationInvalid('The access token signature could not be verified');
+      }
+    } else if (['RS256', 'ES256'].includes(alg)) {
+      const jwks = await this.getJwks(this.config.jwksUri);
+      const key = selectJwk(jwks, tokenParts.header.kid, alg);
+      if (!key) {
+        throw AppError.authenticationInvalid('No matching signing key was found');
+      }
+
+      const publicKey = createPublicKey({ key, format: 'jwk' });
+      if (!verifySignature(tokenParts, publicKey, alg)) {
+        throw AppError.authenticationInvalid('The access token signature could not be verified');
+      }
+    } else {
       throw AppError.authenticationInvalid('Unsupported token signature algorithm');
-    }
-
-    const jwks = await this.getJwks(this.config.jwksUri);
-    const key = selectJwk(jwks, tokenParts.header.kid, alg);
-    if (!key) {
-      throw AppError.authenticationInvalid('No matching signing key was found');
-    }
-
-    const publicKey = createPublicKey({ key, format: 'jwk' });
-    if (!verifySignature(tokenParts, publicKey, alg)) {
-      throw AppError.authenticationInvalid('The access token signature could not be verified');
     }
 
     const nowSeconds = Math.floor((this.config.now?.() ?? Date.now()) / 1000);
@@ -72,7 +81,13 @@ export class CentralAuthJwtVerifier implements TokenVerifier {
     const audience = normalizeAudience(tokenParts.payload.aud);
     const issuedAt = expectNumber(tokenParts.payload.iat, 'iat');
     const expiresAt = expectNumber(tokenParts.payload.exp, 'exp');
-    const clientId = expectString(tokenParts.payload.client_id, 'client_id');
+    // Use client_id claim if present; fall back to audience (which IS the client ID)
+    const clientId =
+      typeof tokenParts.payload.client_id === 'string' && tokenParts.payload.client_id.trim()
+        ? tokenParts.payload.client_id
+        : typeof audience === 'string'
+          ? audience
+          : audience[0] || '';
 
     assertClaimPresence(tokenParts.payload, this.config.requiredClaims);
     assertClaimMatches('iss', issuer, this.config.issuer);
@@ -123,6 +138,7 @@ export function createCentralAuthVerifier(): TokenVerifier {
     audience: env.CENTRAL_AUTH_AUDIENCE,
     clientId: env.CENTRAL_AUTH_CLIENT_ID,
     jwksUri: env.CENTRAL_AUTH_JWKS_URI,
+    jwtSecret: env.CENTRAL_AUTH_JWT_SECRET || undefined,
     requiredClaims: env.CENTRAL_AUTH_REQUIRED_CLAIMS,
     clockToleranceSeconds: 60,
     fetchJwks: async (jwksUri) => {
@@ -186,6 +202,15 @@ function verifySignature(parts: JwtParts, publicKey: KeyObject, alg: string): bo
   return verifier.verify(publicKey, parts.signature);
 }
 
+function verifyHsSignature(parts: JwtParts, secret: string, alg: string): boolean {
+  const hmacAlgo = alg === 'HS256' ? 'sha256' : alg === 'HS384' ? 'sha384' : 'sha512';
+  const hmac = createHmac(hmacAlgo, secret);
+  hmac.update(parts.signingInput);
+  const expected = hmac.digest('base64url');
+  const actual = parts.signature.toString('base64url');
+  return expected === actual;
+}
+
 function assertClaimPresence(payload: Record<string, unknown>, requiredClaims: string[]): void {
   const missing = requiredClaims.filter(
     (claim) => payload[claim] === undefined || payload[claim] === null,
@@ -204,7 +229,7 @@ function assertClaimMatches(name: string, actual: string, expected: string): voi
 function assertAudience(aud: unknown, expected: string): void {
   const values = normalizeAudience(aud);
   if (expected.length > 0 && !values.includes(expected)) {
-    throw AppError.authenticationInvalid('Invalid audience claim');
+    throw AppError.tokenAudienceInvalid('Invalid audience claim');
   }
 }
 
@@ -226,7 +251,7 @@ function assertClientId(actual: string, expected: string): void {
 
 function assertNotExpired(exp: number, nowSeconds: number, toleranceSeconds: number): void {
   if (nowSeconds - toleranceSeconds >= exp) {
-    throw AppError.authenticationInvalid('The access token is expired');
+    throw AppError.accessTokenExpired('The access token is expired');
   }
 }
 

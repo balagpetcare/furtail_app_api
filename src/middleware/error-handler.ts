@@ -41,6 +41,16 @@ export function errorHandler(): ErrorRequestHandler {
       return;
     }
 
+    const multerMapped = mapMulterError(err);
+    if (multerMapped) {
+      sendError(
+        res,
+        { code: multerMapped.code, message: multerMapped.message },
+        { statusCode: multerMapped.statusCode, requestId, correlationId },
+      );
+      return;
+    }
+
     logger.error({ err, requestId, correlationId }, 'unhandled error');
     sendError(
       res,
@@ -57,4 +67,26 @@ function isBodyParserPayloadTooLarge(err: unknown): err is { type?: string; stat
     ((err as { type?: string }).type === 'entity.too.large' ||
       (err as { status?: number }).status === 413),
   );
+}
+
+/** Maps multer's un-typed upload errors (file too large, unexpected field, etc.) to our typed envelope. */
+function mapMulterError(
+  err: unknown,
+): { code: ErrorCode; message: string; statusCode: number } | null {
+  if (!err || typeof err !== 'object' || (err as { name?: string }).name !== 'MulterError') {
+    return null;
+  }
+  const code = (err as { code?: string }).code;
+  if (code === 'LIMIT_FILE_SIZE') {
+    return {
+      code: ErrorCode.MEDIA_SIZE_EXCEEDED,
+      message: 'This file exceeds the maximum allowed size',
+      statusCode: 413,
+    };
+  }
+  return {
+    code: ErrorCode.MEDIA_TYPE_UNSUPPORTED,
+    message: (err as { message?: string }).message || 'This file could not be uploaded',
+    statusCode: 400,
+  };
 }
