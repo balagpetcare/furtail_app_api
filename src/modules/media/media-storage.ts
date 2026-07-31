@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize, relative, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -22,6 +22,7 @@ export interface StoredMediaDescriptor {
 
 export interface MediaStorageAdapter {
   upload(input: UploadedMediaInput): Promise<StoredMediaDescriptor>;
+  delete(storageKey: string): Promise<void>;
 }
 
 const DEFAULT_MEDIA_ROOT = join(process.cwd(), '.media-store');
@@ -81,5 +82,21 @@ export class InMemoryMediaStorageAdapter implements MediaStorageAdapter {
       status: 'READY',
       processingError: null,
     };
+  }
+
+  async delete(storageKey: string): Promise<void> {
+    const filePath = resolveMediaPath(this.rootDir, storageKey);
+    try {
+      await unlink(filePath);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        (error as { code?: string }).code === 'ENOENT'
+      ) {
+        return;
+      }
+      throw error;
+    }
   }
 }

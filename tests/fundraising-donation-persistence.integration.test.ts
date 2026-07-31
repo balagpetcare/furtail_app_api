@@ -166,6 +166,64 @@ describe('fundraising donation persistence', () => {
     void fundraisingStore;
   });
 
+  it('checkout success response always matches the canonical contract, with payment.redirectUrl present (even when null for a non-redirect provider)', async () => {
+    const { app } = buildApp();
+    const campaignId = await createCampaign(app);
+
+    const donation = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${campaignId}/donate`)
+      .set('Authorization', 'Bearer token-1')
+      .set('Idempotency-Key', 'checkout-contract-1')
+      .send({
+        amount: '10000',
+        currencyCode: 'BDT',
+        returnUrl: 'https://app.example/return',
+        cancelUrl: 'https://app.example/cancel',
+        consentAccepted: true,
+      });
+    expect(donation.status).toBe(200);
+
+    const body = donation.body.data;
+    expect(body.reused).toBe(false);
+    expect(typeof body.donationIntent.id).toBe('number');
+    expect(typeof body.donationIntent.publicId).toBe('string');
+    expect(typeof body.donationIntent.referenceId).toBe('string');
+    expect(body.donationIntent.status).toBe('PENDING');
+    expect(String(body.donationIntent.amountMinor)).toBe('10000');
+    expect(body.donationIntent.currencyCode).toBe('BDT');
+    expect(typeof body.donationIntent.expiresAt).toBe('string');
+
+    expect(body.payment).not.toBeNull();
+    expect(typeof body.payment.provider).toBe('string');
+    // The field must exist even when this provider has no redirect step —
+    // it must never be silently dropped from the response, only ever null.
+    expect(Object.prototype.hasOwnProperty.call(body.payment, 'redirectUrl')).toBe(true);
+    // The historical bug: the client's own returnUrl was echoed back as if
+    // it were a real payment-provider redirect. It must never equal that.
+    expect(body.payment.redirectUrl).not.toBe('https://app.example/return');
+
+    // Idempotent retry returns the identical payment attempt, not a new one.
+    const retry = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${campaignId}/donate`)
+      .set('Authorization', 'Bearer token-1')
+      .set('Idempotency-Key', 'checkout-contract-1')
+      .send({
+        amount: '10000',
+        currencyCode: 'BDT',
+        returnUrl: 'https://app.example/return',
+        cancelUrl: 'https://app.example/cancel',
+        consentAccepted: true,
+      });
+    expect(retry.status).toBe(200);
+    expect(retry.body.data.reused).toBe(true);
+    expect(retry.body.data.payment.paymentAttemptId).toBe(body.payment.paymentAttemptId);
+
+    const attemptCount = await getTestPrisma().fundraisingPaymentAttempt.count({
+      where: { donationId: retry.body.data.donationIntent.id },
+    });
+    expect(attemptCount).toBe(1);
+  });
+
   it('is visible to an independent Prisma worker', async () => {
     const { app } = buildApp();
     const campaignId = await createCampaign(app);

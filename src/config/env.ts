@@ -45,6 +45,47 @@ const envSchema = z.object({
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(120),
   SERVICE_NAME: z.string().min(1).default('furtail-app-api'),
   SERVICE_VERSION: z.string().min(1).default('0.1.0'),
+  // `wpa` is the internal/manual-settlement default — it never requires an
+  // external redirect. sslcommerz/amarpay/bkash/nagad/eps are real gateways;
+  // each needs its own credential block below populated before donation
+  // checkout can produce a real redirect for it.
+  PAYMENT_PROVIDER: z.string().trim().toLowerCase().default('wpa'),
+  SSLCOMMERZ_STORE_ID: z.string().trim().optional().default(''),
+  SSLCOMMERZ_STORE_PASSWORD: z.string().trim().optional().default(''),
+  BKASH_APP_KEY: z.string().trim().optional().default(''),
+  BKASH_APP_SECRET: z.string().trim().optional().default(''),
+  BKASH_USERNAME: z.string().trim().optional().default(''),
+  BKASH_PASSWORD: z.string().trim().optional().default(''),
+  NAGAD_MERCHANT_ID: z.string().trim().optional().default(''),
+  NAGAD_MERCHANT_NUMBER: z.string().trim().optional().default(''),
+  NAGAD_PRIVATE_KEY: z.string().trim().optional().default(''),
+  AMARPAY_STORE_ID: z.string().trim().optional().default(''),
+  AMARPAY_SIGNATURE_KEY: z.string().trim().optional().default(''),
+  // EPS_MERCHANT_ID / EPS_MERCHANT_SECRET are this app's canonical names;
+  // EPS_MERCHANT_SECRET maps to EPS's own "Hash Key" (the HMAC secret for
+  // every x-hash signature). EPS_STORE_ID/USERNAME/PASSWORD are the
+  // additional fields EPS's own API contract requires beyond those two.
+  EPS_MERCHANT_ID: z.string().trim().optional().default(''),
+  EPS_MERCHANT_SECRET: z.string().trim().optional().default(''),
+  EPS_STORE_ID: z.string().trim().optional().default(''),
+  EPS_USERNAME: z.string().trim().optional().default(''),
+  EPS_PASSWORD: z.string().trim().optional().default(''),
+  EPS_SANDBOX: z.coerce.boolean().default(true),
+  // Optional overrides of EPS's documented endpoint URLs — left blank to
+  // use the real sandbox/production base URLs derived from EPS_SANDBOX.
+  EPS_TOKEN_URL: z.string().trim().optional().default(''),
+  EPS_INIT_PAYMENT_URL: z.string().trim().optional().default(''),
+  EPS_VERIFY_URL: z.string().trim().optional().default(''),
+  // Where EPS redirects the payer's browser after checkout. These must be
+  // reachable HTTP(S) URLs on this API (not the mobile app's own deep-link
+  // scheme) — the API reconciles via the status API, then 302s to the app.
+  EPS_SUCCESS_URL: z.string().trim().optional().default(''),
+  EPS_FAIL_URL: z.string().trim().optional().default(''),
+  EPS_CANCEL_URL: z.string().trim().optional().default(''),
+  API_PUBLIC_BASE_URL: z.string().trim().optional().default('http://localhost:7300'),
+  // The scheme+host Flutter's deep-link handler listens on, e.g.
+  // "furtail://payment-return".
+  FUNDRAISING_APP_RETURN_DEEP_LINK: z.string().trim().default('furtail://payment-return'),
 });
 
 export type Env = {
@@ -67,6 +108,32 @@ export type Env = {
   RATE_LIMIT_MAX_REQUESTS: number;
   SERVICE_NAME: string;
   SERVICE_VERSION: string;
+  PAYMENT_PROVIDER: string;
+  SSLCOMMERZ_STORE_ID: string;
+  SSLCOMMERZ_STORE_PASSWORD: string;
+  BKASH_APP_KEY: string;
+  BKASH_APP_SECRET: string;
+  BKASH_USERNAME: string;
+  BKASH_PASSWORD: string;
+  NAGAD_MERCHANT_ID: string;
+  NAGAD_MERCHANT_NUMBER: string;
+  NAGAD_PRIVATE_KEY: string;
+  AMARPAY_STORE_ID: string;
+  AMARPAY_SIGNATURE_KEY: string;
+  EPS_MERCHANT_ID: string;
+  EPS_MERCHANT_SECRET: string;
+  EPS_STORE_ID: string;
+  EPS_USERNAME: string;
+  EPS_PASSWORD: string;
+  EPS_SANDBOX: boolean;
+  EPS_TOKEN_URL: string;
+  EPS_INIT_PAYMENT_URL: string;
+  EPS_VERIFY_URL: string;
+  EPS_SUCCESS_URL: string;
+  EPS_FAIL_URL: string;
+  EPS_CANCEL_URL: string;
+  API_PUBLIC_BASE_URL: string;
+  FUNDRAISING_APP_RETURN_DEEP_LINK: string;
 };
 
 /**

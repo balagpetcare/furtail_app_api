@@ -2027,8 +2027,6 @@ export class InMemoryPetClient implements PetContractClient {
       mediaId: record.mediaId,
       fileUrl,
       url: fileUrl,
-      storageKey: media?.storageKey ?? null,
-      key: media?.storageKey ?? null,
       mimeType: media?.mimetype ?? null,
       sizeBytes: media?.size ?? null,
       documentDate: record.documentDate ? record.documentDate.toISOString() : null,

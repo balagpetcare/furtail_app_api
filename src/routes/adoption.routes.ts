@@ -83,7 +83,7 @@ export function adoptionRoutes(deps: AdoptionRoutesDeps): Router {
   }
 
   async function validateAdoptionLocation(
-    body: Record<string, any>,
+    body: Record<string, unknown>,
     isPublish = false,
   ): Promise<void> {
     const countryId = toOptionalPositiveInt(body.countryId);
@@ -94,13 +94,14 @@ export function adoptionRoutes(deps: AdoptionRoutesDeps): Router {
     const wardId = toOptionalPositiveInt(body.bdWardId);
     const upazilaId = toOptionalPositiveInt(body.bdUpazilaId);
     const unionId = toOptionalPositiveInt(body.bdUnionId);
-    const areaId = toOptionalPositiveInt(body.bdAreaId);
 
     // If country is Bangladesh
     if (countryId === 1) {
       // For publish, division and district must be selected at least.
       if (isPublish && (divisionId === undefined || districtId === undefined)) {
-        throw AppError.adoptionLocationRequired('Bangladesh location (division and district) is required');
+        throw AppError.adoptionLocationRequired(
+          'Bangladesh location (division and district) is required',
+        );
       }
     }
 
@@ -111,8 +112,7 @@ export function adoptionRoutes(deps: AdoptionRoutesDeps): Router {
       zoneId === undefined &&
       wardId === undefined &&
       upazilaId === undefined &&
-      unionId === undefined &&
-      areaId === undefined
+      unionId === undefined
     ) {
       return;
     }
@@ -125,7 +125,6 @@ export function adoptionRoutes(deps: AdoptionRoutesDeps): Router {
       wardId,
       upazilaId,
       unionId,
-      areaId,
     });
 
     if (!result.valid) {
@@ -161,9 +160,11 @@ export function adoptionRoutes(deps: AdoptionRoutesDeps): Router {
       route(async (req, res) => {
         const userId = await currentUserId(req);
         const idempotencyKey = req.header('Idempotency-Key')?.trim();
-        
+
         if (req.body && 'approximateDateOfBirth' in req.body) {
-          req.body.approximateDateOfBirth = parseAndNormalizeDateOfBirth(req.body.approximateDateOfBirth);
+          req.body.approximateDateOfBirth = parseAndNormalizeDateOfBirth(
+            req.body.approximateDateOfBirth,
+          );
         }
         await validateAdoptionLocation(req.body ?? {});
 
@@ -204,9 +205,11 @@ export function adoptionRoutes(deps: AdoptionRoutesDeps): Router {
       route(async (req, res) => {
         const userId = await currentUserId(req);
         const id = parseInt(req.params.id ?? '0', 10);
-        
+
         if (req.body && 'approximateDateOfBirth' in req.body) {
-          req.body.approximateDateOfBirth = parseAndNormalizeDateOfBirth(req.body.approximateDateOfBirth);
+          req.body.approximateDateOfBirth = parseAndNormalizeDateOfBirth(
+            req.body.approximateDateOfBirth,
+          );
         }
         const existing = await adoptionStore.getListing(userId, id, true);
         const merged = { ...existing, ...(req.body ?? {}) };
@@ -223,7 +226,7 @@ export function adoptionRoutes(deps: AdoptionRoutesDeps): Router {
       route(async (req, res) => {
         const userId = await currentUserId(req);
         const id = parseInt(req.params.id ?? '0', 10);
-        
+
         const existing = await adoptionStore.getListing(userId, id, true);
         await validateAdoptionLocation(existing, true);
 
@@ -349,7 +352,11 @@ export function adoptionRoutes(deps: AdoptionRoutesDeps): Router {
       ) {
         throw AppError.validation('Invalid status');
       }
-      const listing = await adoptionStore.setStatus(userId, id, status as any);
+      const listing = await adoptionStore.setStatus(
+        userId,
+        id,
+        status as Parameters<AdoptionStore['setStatus']>[2],
+      );
       sendSuccess(res, listing, { requestId: req.requestId, correlationId: req.correlationId });
     });
 
@@ -485,7 +492,7 @@ export function adoptionRoutes(deps: AdoptionRoutesDeps): Router {
       const updated = await adoptionStore.updateApplicationStatus(
         userId,
         applicationId,
-        status as any,
+        status as Parameters<AdoptionStore['updateApplicationStatus']>[2],
         req.body?.note ? String(req.body.note) : undefined,
       );
       const pet = await adoptionStore.getListing(userId, updated.adoptionListingId, false);

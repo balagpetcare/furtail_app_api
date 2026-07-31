@@ -1,808 +1,706 @@
 [
   {
-    "code": "AREA-AMINBAZAR-01",
-    "nameEn": "Aminbazar Bazar Area",
-    "nameBn": "আমিনবাজার বাজার এলাকা",
-    "type": "AREA",
-    "unionCode": "ARE-3282",
-    "sortOrder": 1
-  },
-  {
-    "code": "AREA-ASHULIA-01",
-    "nameEn": "Ashulia Model Town",
-    "nameBn": "আশুলিয়া মডেল টাউন",
-    "type": "AREA",
-    "unionCode": "ARE-3275",
-    "sortOrder": 1
-  },
-  {
-    "code": "CC-DNCC",
     "nameEn": "Dhaka North City Corporation",
     "nameBn": "ঢাকা উত্তর সিটি কর্পোরেশন",
-    "type": "CITY_CORPORATION",
-    "districtCode": "DIS-47",
-    "sortOrder": 1,
-    "reviewStatus": "APPROVED_CURRENT",
-    "currentValidity": "CURRENT_VERIFIED"
+    "code": "DNCC",
+    "districtName": "Dhaka",
+    "divisionName": "Dhaka",
+    "isVerified": true,
+    "zones": [
+      {
+        "nameEn": "Zone-1 (Uttara)",
+        "nameBn": "জোন-১ (উত্তরা)",
+        "code": "DNCC-Z1",
+        "wards": [
+          { "number": 1, "nameEn": "Ward 1", "nameBn": "ওয়ার্ড ১", "area": "Uttara (Sector 1-4)" },
+          { "number": 2, "nameEn": "Ward 2", "nameBn": "ওয়ার্ড ২", "area": "Uttara (Sector 5-7)" },
+          {
+            "number": 3,
+            "nameEn": "Ward 3",
+            "nameBn": "ওয়ার্ড ৩",
+            "area": "Uttara (Sector 8-9, Diabari)"
+          },
+          {
+            "number": 4,
+            "nameEn": "Ward 4",
+            "nameBn": "ওয়ার্ড ৪",
+            "area": "Uttara (Sector 10-14)"
+          },
+          {
+            "number": 5,
+            "nameEn": "Ward 5",
+            "nameBn": "ওয়ার্ড ৫",
+            "area": "Uttara (Sector 15-17)"
+          }
+        ]
+      },
+      {
+        "nameEn": "Zone-2 (Mirpur)",
+        "nameBn": "জোন-২ (মিরপুর)",
+        "code": "DNCC-Z2",
+        "wards": [
+          { "number": 6, "nameEn": "Ward 6", "nameBn": "ওয়ার্ড ৬", "area": "Mirpur-1, 2" },
+          { "number": 7, "nameEn": "Ward 7", "nameBn": "ওয়ার্ড ৭", "area": "Mirpur-6, 7" },
+          { "number": 8, "nameEn": "Ward 8", "nameBn": "ওয়ার্ড ৮", "area": "Mirpur-10, 11" },
+          { "number": 9, "nameEn": "Ward 9", "nameBn": "ওয়ার্ড ৯", "area": "Mirpur-12, Pallabi" },
+          {
+            "number": 10,
+            "nameEn": "Ward 10",
+            "nameBn": "ওয়ার্ড ১০",
+            "area": "Mirpur-13, Shewrapara"
+          }
+        ]
+      },
+      {
+        "nameEn": "Zone-3 (Kafrul)",
+        "nameBn": "জোন-৩ (কাফরুল)",
+        "code": "DNCC-Z3",
+        "wards": [
+          {
+            "number": 11,
+            "nameEn": "Ward 11",
+            "nameBn": "ওয়ার্ড ১১",
+            "area": "Kafrul, Ibrahimpur"
+          },
+          { "number": 12, "nameEn": "Ward 12", "nameBn": "ওয়ার্ড ১২", "area": "Kafrul, Taltola" },
+          { "number": 13, "nameEn": "Ward 13", "nameBn": "ওয়ার্ড ১৩", "area": "Baunia, Monipur" },
+          { "number": 14, "nameEn": "Ward 14", "nameBn": "ওয়ার্ড ১৪", "area": "Rupnagar, Senpara" }
+        ]
+      },
+      {
+        "nameEn": "Zone-4 (Mohakhali)",
+        "nameBn": "জোন-৪ (মহাখালী)",
+        "code": "DNCC-Z4",
+        "wards": [
+          {
+            "number": 15,
+            "nameEn": "Ward 15",
+            "nameBn": "ওয়ার্ড ১৫",
+            "area": "Tejgaon Industrial, Begunbari"
+          },
+          {
+            "number": 16,
+            "nameEn": "Ward 16",
+            "nameBn": "ওয়ার্ড ১৬",
+            "area": "Mohakhali, Niketon"
+          },
+          { "number": 17, "nameEn": "Ward 17", "nameBn": "ওয়ার্ড ১৭", "area": "Gulshan-1, Badda" },
+          {
+            "number": 18,
+            "nameEn": "Ward 18",
+            "nameBn": "ওয়ার্ড ১৮",
+            "area": "Gulshan-2, Banani, Baridhara"
+          }
+        ]
+      },
+      {
+        "nameEn": "Zone-5 (Cantonment)",
+        "nameBn": "জোন-৫ (ক্যান্টনমেন্ট)",
+        "code": "DNCC-Z5",
+        "wards": [
+          {
+            "number": 19,
+            "nameEn": "Ward 19",
+            "nameBn": "ওয়ার্ড ১৯",
+            "area": "Cantonment, Kurmitola"
+          },
+          { "number": 20, "nameEn": "Ward 20", "nameBn": "ওয়ার্ড ২০", "area": "Airport, Nikunja" }
+        ]
+      },
+      {
+        "nameEn": "Zone-6 (Badda)",
+        "nameBn": "জোন-৬ (বাড্ডা)",
+        "code": "DNCC-Z6",
+        "wards": [
+          {
+            "number": 21,
+            "nameEn": "Ward 21",
+            "nameBn": "ওয়ার্ড ২১",
+            "area": "Badda, Shahjadpur"
+          },
+          {
+            "number": 22,
+            "nameEn": "Ward 22",
+            "nameBn": "ওয়ার্ড ২২",
+            "area": "Aftab Nagar, Vatara"
+          },
+          { "number": 23, "nameEn": "Ward 23", "nameBn": "ওয়ার্ড ২৩", "area": "Rampura, Meradia" },
+          { "number": 24, "nameEn": "Ward 24", "nameBn": "ওয়ার্ড ২৪", "area": "Khilgaon, Taltola" }
+        ]
+      },
+      {
+        "nameEn": "Zone-7 (Pallabi)",
+        "nameBn": "জোন-৭ (পল্লবী)",
+        "code": "DNCC-Z7",
+        "wards": [
+          {
+            "number": 25,
+            "nameEn": "Ward 25",
+            "nameBn": "ওয়ার্ড ২৫",
+            "area": "Pallabi, Section 11"
+          },
+          {
+            "number": 26,
+            "nameEn": "Ward 26",
+            "nameBn": "ওয়ার্ড ২৬",
+            "area": "Pallabi, Section 12"
+          },
+          {
+            "number": 27,
+            "nameEn": "Ward 27",
+            "nameBn": "ওয়ার্ড ২৭",
+            "area": "Pallabi, Duaripara"
+          },
+          { "number": 28, "nameEn": "Ward 28", "nameBn": "ওয়ার্ড ২৮", "area": "Turag, Diabari" },
+          { "number": 29, "nameEn": "Ward 29", "nameBn": "ওয়ার্ড ২৯", "area": "Turag, Bawniabadh" }
+        ]
+      },
+      {
+        "nameEn": "Zone-8 (Turag)",
+        "nameBn": "জোন-৮ (তুরাগ)",
+        "code": "DNCC-Z8",
+        "wards": [
+          {
+            "number": 30,
+            "nameEn": "Ward 30",
+            "nameBn": "ওয়ার্ড ৩০",
+            "area": "Turag, Amin Bazar"
+          },
+          { "number": 31, "nameEn": "Ward 31", "nameBn": "ওয়ার্ড ৩১", "area": "Turag, Ukil para" },
+          { "number": 32, "nameEn": "Ward 32", "nameBn": "ওয়ার্ড ৩২", "area": "Turag, Muksudpur" },
+          { "number": 33, "nameEn": "Ward 33", "nameBn": "ওয়ার্ড ৩৩", "area": "Turag, Kalampur" }
+        ]
+      },
+      {
+        "nameEn": "Zone-9 (Dakshinkhan)",
+        "nameBn": "জোন-৯ (দক্ষিণখান)",
+        "code": "DNCC-Z9",
+        "wards": [
+          {
+            "number": 34,
+            "nameEn": "Ward 34",
+            "nameBn": "ওয়ার্ড ৩৪",
+            "area": "Dakshinkhan, Ashkona"
+          },
+          {
+            "number": 35,
+            "nameEn": "Ward 35",
+            "nameBn": "ওয়ার্ড ৩৫",
+            "area": "Dakshinkhan, Satarkul"
+          },
+          {
+            "number": 36,
+            "nameEn": "Ward 36",
+            "nameBn": "ওয়ার্ড ৩৬",
+            "area": "Dakshinkhan, Dokkhin khan"
+          }
+        ]
+      },
+      {
+        "nameEn": "Zone-10 (Uttar Khan)",
+        "nameBn": "জোন-১০ (উত্তরখান)",
+        "code": "DNCC-Z10",
+        "wards": [
+          {
+            "number": 37,
+            "nameEn": "Ward 37",
+            "nameBn": "ওয়ার্ড ৩৭",
+            "area": "Uttar Khan, Harirampur"
+          },
+          {
+            "number": 38,
+            "nameEn": "Ward 38",
+            "nameBn": "ওয়ার্ড ৩৮",
+            "area": "Uttar Khan, Jafrabad"
+          },
+          { "number": 39, "nameEn": "Ward 39", "nameBn": "ওয়ার্ড ৩৯", "area": "Uttar Khan" },
+          {
+            "number": 40,
+            "nameEn": "Ward 40",
+            "nameBn": "ওয়ার্ড ৪০",
+            "area": "Uttar Khan, Bhadam"
+          },
+          { "number": 41, "nameEn": "Ward 41", "nameBn": "ওয়ার্ড ৪১", "area": "Kalampur" },
+          { "number": 42, "nameEn": "Ward 42", "nameBn": "ওয়ার্ড ৪২", "area": "Natun Bazar" },
+          { "number": 43, "nameEn": "Ward 43", "nameBn": "ওয়ার্ড ৪৩", "area": "Khilkhet" },
+          { "number": 44, "nameEn": "Ward 44", "nameBn": "ওয়ার্ড ৪৪", "area": "Nikunja" },
+          { "number": 45, "nameEn": "Ward 45", "nameBn": "ওয়ার্ড ৪৫", "area": "Balur Math" },
+          { "number": 46, "nameEn": "Ward 46", "nameBn": "ওয়ার্ড ৪৬", "area": "Basrabari" },
+          { "number": 47, "nameEn": "Ward 47", "nameBn": "ওয়ার্ড ৪৭", "area": "Rupayan" },
+          { "number": 48, "nameEn": "Ward 48", "nameBn": "ওয়ার্ড ৪৮", "area": "Khilkhet" },
+          { "number": 49, "nameEn": "Ward 49", "nameBn": "ওয়ার্ড ৪৯", "area": "Bishmil" },
+          { "number": 50, "nameEn": "Ward 50", "nameBn": "ওয়ার্ড ৫০", "area": "Abdullahpur" },
+          { "number": 51, "nameEn": "Ward 51", "nameBn": "ওয়ার্ড ৫১", "area": "Diyabari" },
+          { "number": 52, "nameEn": "Ward 52", "nameBn": "ওয়ার্ড ৫২", "area": "Dhour" },
+          { "number": 53, "nameEn": "Ward 53", "nameBn": "ওয়ার্ড ৫৩", "area": "Baunia" },
+          { "number": 54, "nameEn": "Ward 54", "nameBn": "ওয়ার্ড ৫৪", "area": "Kalyanpur" }
+        ]
+      }
+    ]
   },
   {
-    "code": "CC-DSCC",
     "nameEn": "Dhaka South City Corporation",
     "nameBn": "ঢাকা দক্ষিণ সিটি কর্পোরেশন",
-    "type": "CITY_CORPORATION",
-    "districtCode": "DIS-47",
-    "sortOrder": 2,
-    "reviewStatus": "APPROVED_CURRENT",
-    "currentValidity": "CURRENT_VERIFIED"
-  },
-  {
-    "code": "ZONE-DNCC-01",
-    "nameEn": "DNCC Zone 1 (Uttara)",
-    "nameBn": "ডিএনসিসি জোন ১ (উত্তরা)",
-    "type": "ZONE",
-    "districtCode": "DIS-47",
-    "parentCode": "CC-DNCC",
-    "sortOrder": 1,
-    "reviewStatus": "APPROVED_CURRENT",
-    "currentValidity": "CURRENT_VERIFIED"
-  },
-  {
-    "code": "ZONE-DNCC-02",
-    "nameEn": "DNCC Zone 2 (Mirpur)",
-    "nameBn": "ডিএনসিসি জোন ২ (মিরপুর)",
-    "type": "ZONE",
-    "districtCode": "DIS-47",
-    "parentCode": "CC-DNCC",
-    "sortOrder": 2,
-    "reviewStatus": "APPROVED_CURRENT",
-    "currentValidity": "CURRENT_VERIFIED"
-  },
-  {
-    "code": "ZONE-DSCC-01",
-    "nameEn": "DSCC Zone 1 (Motijheel)",
-    "nameBn": "ডিএসসিসি জোন ১ (মতিঝিল)",
-    "type": "ZONE",
-    "districtCode": "DIS-47",
-    "parentCode": "CC-DSCC",
-    "sortOrder": 1,
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DNCC-01",
-    "nameEn": "DNCC Ward 1",
-    "nameBn": "ডিএনসিসি ওয়ার্ড ১",
-    "type": "WARD",
-    "districtCode": "DIS-47",
-    "parentCode": "ZONE-DNCC-01",
-    "sortOrder": 1,
-    "reviewStatus": "APPROVED_CURRENT",
-    "currentValidity": "CURRENT_VERIFIED"
-  },
-  {
-    "code": "WARD-DNCC-02",
-    "nameEn": "DNCC Ward 2",
-    "nameBn": "ডিএনসিসি ওয়ার্ড ২",
-    "type": "WARD",
-    "districtCode": "DIS-47",
-    "parentCode": "ZONE-DNCC-01",
-    "sortOrder": 2,
-    "reviewStatus": "APPROVED_CURRENT",
-    "currentValidity": "CURRENT_VERIFIED"
-  },
-  {
-    "code": "WARD-DNCC-05",
-    "nameEn": "DNCC Ward 5 (Mirpur)",
-    "nameBn": "ডিএনসিসি ওয়ার্ড ৫ (মিরপুর)",
-    "type": "WARD",
-    "districtCode": "DIS-47",
-    "parentCode": "ZONE-DNCC-02",
-    "sortOrder": 1,
-    "reviewStatus": "APPROVED_CURRENT",
-    "currentValidity": "CURRENT_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-01",
-    "nameEn": "DSCC Ward 1",
-    "nameBn": "ডিএসসিসি ওয়ার্ড ১",
-    "type": "WARD",
-    "districtCode": "DIS-47",
-    "parentCode": "ZONE-DSCC-01",
-    "sortOrder": 1,
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "AREA-DNCC-01-01",
-    "nameEn": "Uttara Sector 1",
-    "nameBn": "উত্তরা সেক্টর ১",
-    "type": "AREA",
-    "districtCode": "DIS-47",
-    "parentCode": "WARD-DNCC-01",
-    "sortOrder": 1,
-    "reviewStatus": "APPROVED_CURRENT",
-    "currentValidity": "CURRENT_VERIFIED"
-  },
-  {
-    "code": "AREA-DNCC-05-01",
-    "nameEn": "Mirpur 10",
-    "nameBn": "মিরপুর ১০",
-    "type": "AREA",
-    "districtCode": "DIS-47",
-    "parentCode": "WARD-DNCC-05",
-    "sortOrder": 1,
-    "reviewStatus": "APPROVED_CURRENT",
-    "currentValidity": "CURRENT_VERIFIED"
-  },
-  {
-    "code": "ZONE-DSCC-02",
-    "nameEn": "DSCC Zone 2",
-    "nameBn": "ডিএসসিসি জোন ২",
-    "type": "ZONE",
-    "districtCode": "DIS-47",
-    "parentCode": "CC-DSCC",
-    "sortOrder": 2,
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "ZONE-DSCC-03",
-    "nameEn": "DSCC Zone 3",
-    "nameBn": "ডিএসসিসি জোন ৩",
-    "type": "ZONE",
-    "districtCode": "DIS-47",
-    "parentCode": "CC-DSCC",
-    "sortOrder": 3,
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "ZONE-DSCC-04",
-    "nameEn": "DSCC Zone 4",
-    "nameBn": "ডিএসসিসি জোন ৪",
-    "type": "ZONE",
-    "districtCode": "DIS-47",
-    "parentCode": "CC-DSCC",
-    "sortOrder": 4,
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "ZONE-DSCC-05",
-    "nameEn": "DSCC Zone 5",
-    "nameBn": "ডিএসসিসি জোন ৫",
-    "type": "ZONE",
-    "districtCode": "DIS-47",
-    "parentCode": "CC-DSCC",
-    "sortOrder": 5,
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-15",
-    "nameEn": "DSCC Ward 15",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 15",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-01",
-    "sortOrder": 15,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-16",
-    "nameEn": "DSCC Ward 16",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 16",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-01",
-    "sortOrder": 16,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-17",
-    "nameEn": "DSCC Ward 17",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 17",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-01",
-    "sortOrder": 17,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-18",
-    "nameEn": "DSCC Ward 18",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 18",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-01",
-    "sortOrder": 18,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-19",
-    "nameEn": "DSCC Ward 19",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 19",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-01",
-    "sortOrder": 19,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-20",
-    "nameEn": "DSCC Ward 20",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 20",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-01",
-    "sortOrder": 20,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-21",
-    "nameEn": "DSCC Ward 21",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 21",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-01",
-    "sortOrder": 21,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-02",
-    "nameEn": "DSCC Ward 2",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 2",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-02",
-    "sortOrder": 2,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-03",
-    "nameEn": "DSCC Ward 3",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 3",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-02",
-    "sortOrder": 3,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-04",
-    "nameEn": "DSCC Ward 4",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 4",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-02",
-    "sortOrder": 4,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-05",
-    "nameEn": "DSCC Ward 5",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 5",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-02",
-    "sortOrder": 5,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-06",
-    "nameEn": "DSCC Ward 6",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 6",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-02",
-    "sortOrder": 6,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-08",
-    "nameEn": "DSCC Ward 8",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 8",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-02",
-    "sortOrder": 8,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-09",
-    "nameEn": "DSCC Ward 9",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 9",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-02",
-    "sortOrder": 9,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-10",
-    "nameEn": "DSCC Ward 10",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 10",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-02",
-    "sortOrder": 10,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-11",
-    "nameEn": "DSCC Ward 11",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 11",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-02",
-    "sortOrder": 11,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-12",
-    "nameEn": "DSCC Ward 12",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 12",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-02",
-    "sortOrder": 12,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-13",
-    "nameEn": "DSCC Ward 13",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 13",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-02",
-    "sortOrder": 13,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-14",
-    "nameEn": "DSCC Ward 14",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 14",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-03",
-    "sortOrder": 14,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-22",
-    "nameEn": "DSCC Ward 22",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 22",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-03",
-    "sortOrder": 22,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-23",
-    "nameEn": "DSCC Ward 23",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 23",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-03",
-    "sortOrder": 23,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-24",
-    "nameEn": "DSCC Ward 24",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 24",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-03",
-    "sortOrder": 24,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-25",
-    "nameEn": "DSCC Ward 25",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 25",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-03",
-    "sortOrder": 25,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-26",
-    "nameEn": "DSCC Ward 26",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 26",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-03",
-    "sortOrder": 26,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-27",
-    "nameEn": "DSCC Ward 27",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 27",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-03",
-    "sortOrder": 27,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-28",
-    "nameEn": "DSCC Ward 28",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 28",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-03",
-    "sortOrder": 28,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-29",
-    "nameEn": "DSCC Ward 29",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 29",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-03",
-    "sortOrder": 29,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-55",
-    "nameEn": "DSCC Ward 55",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 55",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-03",
-    "sortOrder": 55,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-56",
-    "nameEn": "DSCC Ward 56",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 56",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-03",
-    "sortOrder": 56,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-30",
-    "nameEn": "DSCC Ward 30",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 30",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-04",
-    "sortOrder": 30,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-31",
-    "nameEn": "DSCC Ward 31",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 31",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-04",
-    "sortOrder": 31,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-32",
-    "nameEn": "DSCC Ward 32",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 32",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-04",
-    "sortOrder": 32,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-33",
-    "nameEn": "DSCC Ward 33",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 33",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-04",
-    "sortOrder": 33,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-34",
-    "nameEn": "DSCC Ward 34",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 34",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-04",
-    "sortOrder": 34,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-35",
-    "nameEn": "DSCC Ward 35",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 35",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-04",
-    "sortOrder": 35,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-36",
-    "nameEn": "DSCC Ward 36",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 36",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-04",
-    "sortOrder": 36,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-37",
-    "nameEn": "DSCC Ward 37",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 37",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-04",
-    "sortOrder": 37,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-38",
-    "nameEn": "DSCC Ward 38",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 38",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-04",
-    "sortOrder": 38,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-42",
-    "nameEn": "DSCC Ward 42",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 42",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-04",
-    "sortOrder": 42,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-43",
-    "nameEn": "DSCC Ward 43",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 43",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-04",
-    "sortOrder": 43,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-07",
-    "nameEn": "DSCC Ward 7",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 7",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 7,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-39",
-    "nameEn": "DSCC Ward 39",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 39",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 39,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-40",
-    "nameEn": "DSCC Ward 40",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 40",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 40,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-41",
-    "nameEn": "DSCC Ward 41",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 41",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 41,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-44",
-    "nameEn": "DSCC Ward 44",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 44",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 44,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-45",
-    "nameEn": "DSCC Ward 45",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 45",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 45,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-46",
-    "nameEn": "DSCC Ward 46",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 46",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 46,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-47",
-    "nameEn": "DSCC Ward 47",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 47",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 47,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-48",
-    "nameEn": "DSCC Ward 48",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 48",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 48,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-49",
-    "nameEn": "DSCC Ward 49",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 49",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 49,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-50",
-    "nameEn": "DSCC Ward 50",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 50",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 50,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-51",
-    "nameEn": "DSCC Ward 51",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 51",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 51,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-52",
-    "nameEn": "DSCC Ward 52",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 52",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 52,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-53",
-    "nameEn": "DSCC Ward 53",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 53",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 53,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "WARD-DSCC-54",
-    "nameEn": "DSCC Ward 54",
-    "nameBn": "ডিএসসিসি ওয়ার্ড 54",
-    "type": "WARD",
-    "parentCode": "ZONE-DSCC-05",
-    "sortOrder": 54,
-    "districtCode": "DIS-47",
-    "reviewStatus": "APPROVED_HISTORICAL",
-    "currentValidity": "HISTORICAL_VERIFIED"
-  },
-  {
-    "code": "ZONE-DNCC-03",
-    "nameEn": "DNCC Zone 3",
-    "nameBn": "ডিএনসিসি জোন ৩",
-    "type": "ZONE",
-    "districtCode": "DIS-47",
-    "parentCode": "CC-DNCC",
-    "sortOrder": 3,
-    "reviewStatus": "APPROVED_CURRENT",
-    "currentValidity": "CURRENT_VERIFIED"
-  },
-  {
-    "code": "WARD-DNCC-18",
-    "nameEn": "DNCC Ward 18",
-    "nameBn": "ডিএনসিসি ওয়ার্ড ১৮",
-    "type": "WARD",
-    "districtCode": "DIS-47",
-    "parentCode": "ZONE-DNCC-03",
-    "sortOrder": 18,
-    "reviewStatus": "APPROVED_CURRENT",
-    "currentValidity": "CURRENT_VERIFIED"
+    "code": "DSCC",
+    "districtName": "Dhaka",
+    "divisionName": "Dhaka",
+    "isVerified": true,
+    "zones": [
+      {
+        "nameEn": "Zone-1 (Kotwali)",
+        "nameBn": "জোন-১ (কোতোয়ালি)",
+        "code": "DSCC-Z1",
+        "wards": [
+          { "number": 1, "nameEn": "Ward 1", "nameBn": "ওয়ার্ড ১", "area": "Kotwali, Bangshal" },
+          {
+            "number": 2,
+            "nameEn": "Ward 2",
+            "nameBn": "ওয়ার্ড ২",
+            "area": "Sutrapur, Armanitola"
+          },
+          { "number": 3, "nameEn": "Ward 3", "nameBn": "ওয়ার্ড ৩", "area": "Sutrapur, Narinda" },
+          { "number": 4, "nameEn": "Ward 4", "nameBn": "ওয়ার্ড ৪", "area": "Wari, Gandaria" },
+          { "number": 5, "nameEn": "Ward 5", "nameBn": "ওয়ার্ড ৫", "area": "Wari, Nababganj" },
+          { "number": 6, "nameEn": "Ward 6", "nameBn": "ওয়ার্ড ৬", "area": "Demra, Jatrabari" },
+          { "number": 7, "nameEn": "Ward 7", "nameBn": "ওয়ার্ড ৭", "area": "Jatrabari, Matuail" },
+          { "number": 8, "nameEn": "Ward 8", "nameBn": "ওয়ার্ড ৮", "area": "Shyampur, Demra" },
+          { "number": 9, "nameEn": "Ward 9", "nameBn": "ওয়ার্ড ৯", "area": "Shyampur, Postogola" },
+          {
+            "number": 10,
+            "nameEn": "Ward 10",
+            "nameBn": "ওয়ার্ড ১০",
+            "area": "Shyampur, Kamrangirchar"
+          },
+          { "number": 11, "nameEn": "Ward 11", "nameBn": "ওয়ার্ড ১১", "area": "Kamrangirchar" },
+          {
+            "number": 12,
+            "nameEn": "Ward 12",
+            "nameBn": "ওয়ার্ড ১২",
+            "area": "Kamrangirchar, Aminbazar"
+          },
+          {
+            "number": 13,
+            "nameEn": "Ward 13",
+            "nameBn": "ওয়ার্ড ১৩",
+            "area": "Lalbagh, Nawabganj"
+          }
+        ]
+      },
+      {
+        "nameEn": "Zone-2 (Lalbagh)",
+        "nameBn": "জোন-২ (লালবাগ)",
+        "code": "DSCC-Z2",
+        "wards": [
+          {
+            "number": 14,
+            "nameEn": "Ward 14",
+            "nameBn": "ওয়ার্ড ১৪",
+            "area": "Lalbagh, Imamganj"
+          },
+          {
+            "number": 15,
+            "nameEn": "Ward 15",
+            "nameBn": "ওয়ার্ড ১৫",
+            "area": "Lalbagh, Jigatola"
+          },
+          {
+            "number": 16,
+            "nameEn": "Ward 16",
+            "nameBn": "ওয়ার্ড ১৬",
+            "area": "Hazaribagh, Rayerbazar"
+          },
+          {
+            "number": 17,
+            "nameEn": "Ward 17",
+            "nameBn": "ওয়ার্ড ১৭",
+            "area": "Hazaribagh, Dhanmondi"
+          },
+          { "number": 18, "nameEn": "Ward 18", "nameBn": "ওয়ার্ড ১৮", "area": "Hazaribagh" },
+          {
+            "number": 19,
+            "nameEn": "Ward 19",
+            "nameBn": "ওয়ার্ড ১৯",
+            "area": "Dhanmondi, Lalmatia"
+          },
+          {
+            "number": 20,
+            "nameEn": "Ward 20",
+            "nameBn": "ওয়ার্ড ২০",
+            "area": "Dhanmondi, Kalabagan"
+          },
+          {
+            "number": 21,
+            "nameEn": "Ward 21",
+            "nameBn": "ওয়ার্ড ২১",
+            "area": "New Market, Azimpur"
+          },
+          {
+            "number": 22,
+            "nameEn": "Ward 22",
+            "nameBn": "ওয়ার্ড ২২",
+            "area": "Paltan, Matijheel"
+          },
+          {
+            "number": 23,
+            "nameEn": "Ward 23",
+            "nameBn": "ওয়ার্ড ২৩",
+            "area": "Matijheel, Arambagh"
+          },
+          {
+            "number": 24,
+            "nameEn": "Ward 24",
+            "nameBn": "ওয়ার্ড ২৪",
+            "area": "Motijheel, Kakrail"
+          },
+          {
+            "number": 25,
+            "nameEn": "Ward 25",
+            "nameBn": "ওয়ার্ড ২৫",
+            "area": "Ramna, Segun Bagicha"
+          }
+        ]
+      },
+      {
+        "nameEn": "Zone-3 (Demra)",
+        "nameBn": "জোন-৩ (ডেমরা)",
+        "code": "DSCC-Z3",
+        "wards": [
+          { "number": 26, "nameEn": "Ward 26", "nameBn": "ওয়ার্ড ২৬", "area": "Demra, Mandail" },
+          {
+            "number": 27,
+            "nameEn": "Ward 27",
+            "nameBn": "ওয়ার্ড ২৭",
+            "area": "Demra, Shitalakhya"
+          },
+          { "number": 28, "nameEn": "Ward 28", "nameBn": "ওয়ার্ড ২৮", "area": "Demra, Matuail" },
+          {
+            "number": 29,
+            "nameEn": "Ward 29",
+            "nameBn": "ওয়ার্ড ২৯",
+            "area": "Kadamtali, Fatulla"
+          },
+          {
+            "number": 30,
+            "nameEn": "Ward 30",
+            "nameBn": "ওয়ার্ড ৩০",
+            "area": "Kadamtali, Jatrabari"
+          }
+        ]
+      },
+      {
+        "nameEn": "Zone-4 (Gendaria)",
+        "nameBn": "জোন-৪ (গেন্ডারিয়া)",
+        "code": "DSCC-Z4",
+        "wards": [
+          { "number": 31, "nameEn": "Ward 31", "nameBn": "ওয়ার্ড ৩১", "area": "Gandaria, Wari" },
+          {
+            "number": 32,
+            "nameEn": "Ward 32",
+            "nameBn": "ওয়ার্ড ৩২",
+            "area": "Gandaria, Swamibagh"
+          },
+          {
+            "number": 33,
+            "nameEn": "Ward 33",
+            "nameBn": "ওয়ার্ড ৩৩",
+            "area": "Kotwali, Farashganj"
+          },
+          {
+            "number": 34,
+            "nameEn": "Ward 34",
+            "nameBn": "ওয়ার্ড ৩৪",
+            "area": "Chawkbazar, Islampur"
+          },
+          {
+            "number": 35,
+            "nameEn": "Ward 35",
+            "nameBn": "ওয়ার্ড ৩৫",
+            "area": "Chawkbazar, Bekutia"
+          },
+          {
+            "number": 36,
+            "nameEn": "Ward 36",
+            "nameBn": "ওয়ার্ড ৩৬",
+            "area": "Chawkbazar, Nazimuddin Road"
+          },
+          {
+            "number": 37,
+            "nameEn": "Ward 37",
+            "nameBn": "ওয়ার্ড ৩৭",
+            "area": "Chawkbazar, Mitford"
+          },
+          {
+            "number": 38,
+            "nameEn": "Ward 38",
+            "nameBn": "ওয়ার্ড ৩৮",
+            "area": "Lalbagh, Urdu Road"
+          },
+          {
+            "number": 39,
+            "nameEn": "Ward 39",
+            "nameBn": "ওয়ার্ড ৩৯",
+            "area": "Lalbagh, Rayer Bazar"
+          },
+          {
+            "number": 40,
+            "nameEn": "Ward 40",
+            "nameBn": "ওয়ার্ড ৪০",
+            "area": "Hazaribagh, Basabo"
+          }
+        ]
+      },
+      {
+        "nameEn": "Zone-5 (Shyampur)",
+        "nameBn": "জোন-৫ (শ্যামপুর)",
+        "code": "DSCC-Z5",
+        "wards": [
+          { "number": 41, "nameEn": "Ward 41", "nameBn": "ওয়ার্ড ৪১", "area": "Shyampur" },
+          {
+            "number": 42,
+            "nameEn": "Ward 42",
+            "nameBn": "ওয়ার্ড ৪২",
+            "area": "Shyampur, Postogola"
+          },
+          {
+            "number": 43,
+            "nameEn": "Ward 43",
+            "nameBn": "ওয়ার্ড ৪৩",
+            "area": "Shyampur, Demra Road"
+          },
+          { "number": 44, "nameEn": "Ward 44", "nameBn": "ওয়ার্ড ৪৪", "area": "Kadamtali" },
+          {
+            "number": 45,
+            "nameEn": "Ward 45",
+            "nameBn": "ওয়ার্ড ৪৫",
+            "area": "Jatrabari, Matuail"
+          },
+          {
+            "number": 46,
+            "nameEn": "Ward 46",
+            "nameBn": "ওয়ার্ড ৪৬",
+            "area": "Jatrabari, South Jatrabari"
+          },
+          {
+            "number": 47,
+            "nameEn": "Ward 47",
+            "nameBn": "ওয়ার্ড ৪৭",
+            "area": "Demra, Shasongacha"
+          },
+          { "number": 48, "nameEn": "Ward 48", "nameBn": "ওয়ার্ড ৪৮", "area": "Demra, Sarulia" },
+          { "number": 49, "nameEn": "Ward 49", "nameBn": "ওয়ার্ড ৪৯", "area": "Demra, Mugda" },
+          {
+            "number": 50,
+            "nameEn": "Ward 50",
+            "nameBn": "ওয়ার্ড ৫০",
+            "area": "Demra, Shanir Akhra"
+          }
+        ]
+      },
+      {
+        "nameEn": "Zone-6 (Kamrangirchar)",
+        "nameBn": "জোন-৬ (কামরাঙ্গীরচর)",
+        "code": "DSCC-Z6",
+        "wards": [
+          { "number": 51, "nameEn": "Ward 51", "nameBn": "ওয়ার্ড ৫১", "area": "Kamrangirchar" },
+          {
+            "number": 52,
+            "nameEn": "Ward 52",
+            "nameBn": "ওয়ার্ড ৫২",
+            "area": "Kamrangirchar, South"
+          },
+          {
+            "number": 53,
+            "nameEn": "Ward 53",
+            "nameBn": "ওয়ার্ড ৫৩",
+            "area": "Kamrangirchar, North"
+          },
+          {
+            "number": 54,
+            "nameEn": "Ward 54",
+            "nameBn": "ওয়ার্ড ৫৪",
+            "area": "Kamrangirchar, West"
+          },
+          {
+            "number": 55,
+            "nameEn": "Ward 55",
+            "nameBn": "ওয়ার্ড ৫৫",
+            "area": "Jinjira, Kamrangirchar"
+          },
+          { "number": 56, "nameEn": "Ward 56", "nameBn": "ওয়ার্ড ৫৬", "area": "Nawabganj, South" },
+          { "number": 57, "nameEn": "Ward 57", "nameBn": "ওয়ার্ড ৫৭", "area": "Nawabganj North" }
+        ]
+      },
+      {
+        "nameEn": "Zone-7 (Extended Area)",
+        "nameBn": "জোন-৭ (সম্প্রসারিত এলাকা)",
+        "code": "DSCC-Z7",
+        "wards": [
+          { "number": 58, "nameEn": "Ward 58", "nameBn": "ওয়ার্ড ৫৮", "area": "Matuail" },
+          { "number": 59, "nameEn": "Ward 59", "nameBn": "ওয়ার্ড ৫৯", "area": "Matuail South" },
+          { "number": 60, "nameEn": "Ward 60", "nameBn": "ওয়ার্ড ৬০", "area": "Matuail East" },
+          { "number": 61, "nameEn": "Ward 61", "nameBn": "ওয়ার্ড ৬১", "area": "Jatrabari North" },
+          { "number": 62, "nameEn": "Ward 62", "nameBn": "ওয়ার্ড ৬২", "area": "Jatrabari South" },
+          {
+            "number": 63,
+            "nameEn": "Ward 63",
+            "nameBn": "ওয়ার্ড ৬৩",
+            "area": "Khilgaon Extended"
+          },
+          { "number": 64, "nameEn": "Ward 64", "nameBn": "ওয়ার্ড ৬৪", "area": "Mugda Extended" },
+          { "number": 65, "nameEn": "Ward 65", "nameBn": "ওয়ার্ড ৬৫", "area": "Basabo Extended" },
+          {
+            "number": 66,
+            "nameEn": "Ward 66",
+            "nameBn": "ওয়ার্ড ৬৬",
+            "area": "Rayer Bazar Extended"
+          },
+          {
+            "number": 67,
+            "nameEn": "Ward 67",
+            "nameBn": "ওয়ার্ড ৬৭",
+            "area": "Hazaribagh Extended"
+          },
+          {
+            "number": 68,
+            "nameEn": "Ward 68",
+            "nameBn": "ওয়ার্ড ৬৮",
+            "area": "Kamrangirchar Extended"
+          },
+          {
+            "number": 69,
+            "nameEn": "Ward 69",
+            "nameBn": "ওয়ার্ড ৬৯",
+            "area": "Keraniganj Extended"
+          },
+          { "number": 70, "nameEn": "Ward 70", "nameBn": "ওয়ার্ড ৭০", "area": "Wari Extended" },
+          {
+            "number": 71,
+            "nameEn": "Ward 71",
+            "nameBn": "ওয়ার্ড ৭১",
+            "area": "Postogola Extended"
+          },
+          {
+            "number": 72,
+            "nameEn": "Ward 72",
+            "nameBn": "ওয়ার্ড ৭২",
+            "area": "Shyampur Extended"
+          },
+          { "number": 73, "nameEn": "Ward 73", "nameBn": "ওয়ার্ড ৭৩", "area": "Demra Extended" },
+          {
+            "number": 74,
+            "nameEn": "Ward 74",
+            "nameBn": "ওয়ার্ড ৭৪",
+            "area": "Shanir Akhra Extended"
+          },
+          {
+            "number": 75,
+            "nameEn": "Ward 75",
+            "nameBn": "ওয়ার্ড ৭৫",
+            "area": "Kodomtoli Extended"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "nameEn": "Chattogram City Corporation",
+    "nameBn": "চট্টগ্রাম সিটি কর্পোরেশন",
+    "code": "CCC",
+    "districtName": "Chattogram",
+    "divisionName": "Chattogram",
+    "isVerified": true,
+    "wardCount": 41,
+    "zones": []
+  },
+  {
+    "nameEn": "Gazipur City Corporation",
+    "nameBn": "গাজীপুর সিটি কর্পোরেশন",
+    "code": "GCC",
+    "districtName": "Gazipur",
+    "divisionName": "Dhaka",
+    "isVerified": true,
+    "wardCount": 57,
+    "zones": []
+  },
+  {
+    "nameEn": "Narayanganj City Corporation",
+    "nameBn": "নারায়ণগঞ্জ সিটি কর্পোরেশন",
+    "code": "NCC",
+    "districtName": "Narayanganj",
+    "divisionName": "Dhaka",
+    "isVerified": true,
+    "wardCount": 27,
+    "zones": []
+  },
+  {
+    "nameEn": "Khulna City Corporation",
+    "nameBn": "খুলনা সিটি কর্পোরেশন",
+    "code": "KCC",
+    "districtName": "Khulna",
+    "divisionName": "Khulna",
+    "isVerified": true,
+    "wardCount": 31,
+    "zones": []
+  },
+  {
+    "nameEn": "Rajshahi City Corporation",
+    "nameBn": "রাজশাহী সিটি কর্পোরেশন",
+    "code": "RCC",
+    "districtName": "Rajshahi",
+    "divisionName": "Rajshahi",
+    "isVerified": true,
+    "wardCount": 30,
+    "zones": []
+  },
+  {
+    "nameEn": "Sylhet City Corporation",
+    "nameBn": "সিলেট সিটি কর্পোরেশন",
+    "code": "SCC",
+    "districtName": "Sylhet",
+    "divisionName": "Sylhet",
+    "isVerified": true,
+    "wardCount": 27,
+    "zones": []
+  },
+  {
+    "nameEn": "Barishal City Corporation",
+    "nameBn": "বরিশাল সিটি কর্পোরেশন",
+    "code": "BCC",
+    "districtName": "Barisal",
+    "divisionName": "Barisal",
+    "isVerified": true,
+    "wardCount": 30,
+    "zones": []
+  },
+  {
+    "nameEn": "Rangpur City Corporation",
+    "nameBn": "রংপুর সিটি কর্পোরেশন",
+    "code": "RPCC",
+    "districtName": "Rangpur",
+    "divisionName": "Rangpur",
+    "isVerified": true,
+    "wardCount": 33,
+    "zones": []
+  },
+  {
+    "nameEn": "Cumilla City Corporation",
+    "nameBn": "কুমিল্লা সিটি কর্পোরেশন",
+    "code": "CMCC",
+    "districtName": "Comilla",
+    "divisionName": "Chattogram",
+    "isVerified": true,
+    "wardCount": 27,
+    "zones": []
+  },
+  {
+    "nameEn": "Mymensingh City Corporation",
+    "nameBn": "ময়মনসিংহ সিটি কর্পোরেশন",
+    "code": "MCC",
+    "districtName": "Mymensingh",
+    "divisionName": "Mymensingh",
+    "isVerified": false,
+    "wardCount": 33,
+    "zones": [],
+    "_note": "Ward boundaries need official source verification"
   }
 ]

@@ -264,10 +264,7 @@ export function locationsRoutes(deps: LocationRoutesDeps = {}): Router {
     route(async (req, res) => {
       const parentId = readOptionalPositiveInt(req.query.parentId);
       const unionId = readOptionalPositiveInt(req.query.unionId);
-      const result = await store.listAreas(
-        { parentId, unionId },
-        readBoundedQuery(req.query),
-      );
+      const result = await store.listAreas({ parentId, unionId }, readBoundedQuery(req.query));
       sendSuccess(res, result, { requestId: req.requestId, correlationId: req.correlationId });
     }),
   );
@@ -293,7 +290,6 @@ export function locationsRoutes(deps: LocationRoutesDeps = {}): Router {
         districtId: readOptionalPositiveInt(body.districtId),
         upazilaId: readOptionalPositiveInt(body.upazilaId),
         unionId: readOptionalPositiveInt(body.unionId),
-        areaId: readOptionalPositiveInt(body.areaId),
         cityCorporationId: readOptionalPositiveInt(body.cityCorporationId),
         zoneId: readOptionalPositiveInt(body.zoneId),
         wardId: readOptionalPositiveInt(body.wardId),

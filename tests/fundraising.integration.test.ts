@@ -5,6 +5,8 @@ import request from 'supertest';
 import { AppError } from '../src/core/errors/app-error';
 import { createAppWithDependencies } from '../src/app';
 import { createFundraisingStore } from '../src/modules/fundraising/fundraising-store';
+import { createLocationStore } from '../src/modules/locations/location-store';
+import { createPrismaLocationDataSource } from '../src/modules/locations/prisma-location-data-source';
 import { createSocialCoreStore } from '../src/modules/social/social-store';
 import { getTestPrisma } from './helpers/test-prisma';
 import { disconnectPrisma } from '../src/infrastructure/db/prisma-client';
@@ -27,10 +29,11 @@ describe('fundraising contracts', () => {
     await prisma.fundraisingDonation.deleteMany({ where: { id: { gt: 1 } } });
     await prisma.fundraisingCampaignMedia.deleteMany({ where: { campaignId: { gt: 1 } } });
     await prisma.fundraisingCampaignUpdate.deleteMany({ where: { campaignId: { gt: 1 } } });
+    await prisma.fundraisingIdempotencyKey.deleteMany({});
     await prisma.fundraisingCampaign.deleteMany({ where: { id: { gt: 1 } } });
     await prisma.fundraisingCampaignDraft.deleteMany({ where: { id: { gt: 1 } } });
-    await prisma.fundraisingVerificationDocument.deleteMany({ where: { accountId: { gt: 1 } } });
-    await prisma.fundraisingVerificationAccount.deleteMany({ where: { ownerUserId: { gt: 1 } } });
+    await prisma.fundraisingVerificationDocument.deleteMany({});
+    await prisma.fundraisingVerificationAccount.deleteMany({});
   });
 
   afterAll(async () => {
@@ -69,15 +72,17 @@ describe('fundraising contracts', () => {
   }
 
   function buildApp() {
+    const prisma = getTestPrisma();
     const socialStore = createSocialCoreStore(undefined, undefined, async (principal) => {
       const id = Number(principal.sub);
       return Number.isFinite(id) && id > 0 ? { id } : null;
     });
-    const fundraisingStore = createFundraisingStore(socialStore, { prisma: getTestPrisma() });
+    const fundraisingStore = createFundraisingStore(socialStore, { prisma });
     const app = createAppWithDependencies({
       authVerifier: verifier(),
       socialStore,
       fundraisingStore,
+      locationStore: createLocationStore(createPrismaLocationDataSource(prisma)),
     });
     return { app, fundraisingStore, socialStore };
   }
@@ -145,6 +150,30 @@ describe('fundraising contracts', () => {
       .set('Authorization', 'Bearer token-1');
     expect(submitted.status).toBe(200);
     expect(submitted.body.data.status).toBe('VERIFIED');
+  });
+
+  it('returns a genuine empty feed and empty payout lists', async () => {
+    const { app } = buildApp();
+
+    const emptyFeed = await request(app)
+      .get('/api/v1/fundraising/feed')
+      .set('Authorization', 'Bearer token-1')
+      .query({ category: '__no_such_category__' });
+    expect(emptyFeed.status).toBe(200);
+    expect(emptyFeed.body.data.items).toEqual([]);
+    expect(emptyFeed.body.data.nextCursor).toBeNull();
+
+    const payoutCatalog = await request(app)
+      .get('/api/v1/fundraising/payout/catalog')
+      .set('Authorization', 'Bearer token-1');
+    expect(payoutCatalog.status).toBe(200);
+    expect(payoutCatalog.body.data).toEqual([]);
+
+    const payoutMethods = await request(app)
+      .get('/api/v1/fundraising/payout/methods')
+      .set('Authorization', 'Bearer token-1');
+    expect(payoutMethods.status).toBe(200);
+    expect(payoutMethods.body.data).toEqual([]);
   });
 
   it('treats a Bangladesh location as complete without an area, and never blocks on it', async () => {
@@ -375,6 +404,424 @@ describe('fundraising contracts', () => {
     expect(submitted.body.data.status).toBe('PENDING');
   });
 
+  it('allows a pending fundraising account to submit a fundraiser', async () => {
+    const { app } = buildApp();
+
+    await request(app)
+      .patch('/api/v1/fundraising/account')
+      .set('Authorization', 'Bearer token-2')
+      .send({
+        fullName: 'Nadia Rahman',
+        dateOfBirth: '1998-05-14',
+        presentAddress: 'Village Road',
+        permanentAddress: 'Village Road',
+        divisionId: 1,
+        districtId: 2,
+        upazilaId: 3,
+        unionId: 4,
+        primaryDocumentType: 'NID',
+        nationalIdNumber: '1234567890',
+      });
+    await request(app)
+      .post('/api/v1/fundraising/account/documents')
+      .set('Authorization', 'Bearer token-2')
+      .send({ title: 'NID front', mediaId: 3, documentType: 'PRIMARY' });
+
+    const submittedAccount = await request(app)
+      .post('/api/v1/fundraising/account/submit')
+      .set('Authorization', 'Bearer token-2');
+    expect(submittedAccount.status).toBe(200);
+    expect(submittedAccount.body.data.status).toBe('PENDING');
+
+    const draft = await request(app)
+      .post('/api/v1/fundraising/campaigns/drafts')
+      .set('Authorization', 'Bearer token-2')
+      .send({
+        title: 'Pending account fundraiser',
+        caption: 'Submit should not block on verification status',
+        category: 'PET_HEALTH',
+        fundingMode: 'ONE_TIME',
+        currencyCode: 'BDT',
+        targetAmountMinor: '125000',
+        beneficiaryType: 'PET',
+        beneficiaryName: 'Luna',
+        locationText: 'Dhaka',
+        deadline: '2026-12-31T00:00:00.000Z',
+        mediaIds: [3],
+      });
+    expect(draft.status).toBe(201);
+
+    const submittedDraft = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${draft.body.data.id}/submit`)
+      .set('Authorization', 'Bearer token-2')
+      .set('Idempotency-Key', 'pending-account-submit-1');
+    expect(submittedDraft.status).toBe(200);
+    expect(submittedDraft.body.data.status).toBe('PENDING_REVIEW');
+    expect(submittedDraft.body.data.post).toBeDefined();
+    expect(submittedDraft.body.data.submittedAt).toBeDefined();
+
+    const submittedAgain = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${draft.body.data.id}/submit`)
+      .set('Authorization', 'Bearer token-2')
+      .set('Idempotency-Key', 'pending-account-submit-1');
+    expect(submittedAgain.status).toBe(200);
+    expect(submittedAgain.body.data.status).toBe('PENDING_REVIEW');
+    expect(submittedAgain.body.data.post.id).toBe(submittedDraft.body.data.post.id);
+  });
+
+  // Fundraising/payout verification protects money leaving the platform —
+  // it must never gate creating, saving or submitting a campaign. These
+  // cover the account states that previously blocked Submit.
+  it('lets a user with no fundraising verification account at all submit a campaign', async () => {
+    const { app } = buildApp();
+
+    // token-2's account is wiped in beforeEach and never re-created here,
+    // so this request runs with no FundraisingVerificationAccount row.
+    const accountBefore = await request(app)
+      .get('/api/v1/fundraising/account/me')
+      .set('Authorization', 'Bearer token-2');
+    expect(accountBefore.status).toBe(404);
+
+    const draft = await request(app)
+      .post('/api/v1/fundraising/campaigns/drafts')
+      .set('Authorization', 'Bearer token-2')
+      .send({
+        title: 'No verification account fundraiser',
+        caption: 'Submission must not require a KYC record to exist.',
+        category: 'PET_HEALTH',
+        fundingMode: 'ONE_TIME',
+        currencyCode: 'BDT',
+        targetAmountMinor: '125000',
+        beneficiaryType: 'PET',
+        beneficiaryName: 'Luna',
+        locationText: 'Dhaka',
+        deadline: '2026-12-31T00:00:00.000Z',
+        mediaIds: [3],
+      });
+    expect(draft.status).toBe(201);
+
+    const submitted = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${draft.body.data.id}/submit`)
+      .set('Authorization', 'Bearer token-2')
+      .set('Idempotency-Key', 'no-account-submit-1');
+    expect(submitted.status).toBe(200);
+    expect(submitted.body.data.status).toBe('PENDING_REVIEW');
+
+    // Still no KYC record was fabricated as a side effect of submitting.
+    const accountAfter = await request(app)
+      .get('/api/v1/fundraising/account/me')
+      .set('Authorization', 'Bearer token-2');
+    expect(accountAfter.status).toBe(404);
+
+    // Idempotent retry returns the same campaign, no duplicate.
+    const again = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${draft.body.data.id}/submit`)
+      .set('Authorization', 'Bearer token-2')
+      .set('Idempotency-Key', 'no-account-submit-1');
+    expect(again.status).toBe(200);
+    expect(again.body.data.status).toBe('PENDING_REVIEW');
+    const campaignCount = await getTestPrisma().fundraisingCampaign.count({
+      where: { draftId: draft.body.data.id },
+    });
+    expect(campaignCount).toBe(1);
+  });
+
+  it('lets a payout-REJECTED fundraising account submit a campaign', async () => {
+    const { app } = buildApp();
+
+    await request(app)
+      .patch('/api/v1/fundraising/account')
+      .set('Authorization', 'Bearer token-2')
+      .send({ fullName: 'Rejected Payout User' });
+    // Rejection only ever concerns payout/KYC eligibility — it must not
+    // stop this user from raising money.
+    await getTestPrisma().fundraisingVerificationAccount.update({
+      where: { ownerUserId: 2 },
+      data: { status: 'REJECTED', rejectionReason: 'Document unreadable' },
+    });
+
+    const draft = await request(app)
+      .post('/api/v1/fundraising/campaigns/drafts')
+      .set('Authorization', 'Bearer token-2')
+      .send({
+        title: 'Rejected verification fundraiser',
+        caption: 'A payout rejection must not block campaign submission.',
+        category: 'PET_HEALTH',
+        fundingMode: 'ONE_TIME',
+        currencyCode: 'BDT',
+        targetAmountMinor: '125000',
+        beneficiaryType: 'PET',
+        beneficiaryName: 'Luna',
+        locationText: 'Dhaka',
+        deadline: '2026-12-31T00:00:00.000Z',
+        mediaIds: [3],
+      });
+    expect(draft.status).toBe(201);
+
+    const submitted = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${draft.body.data.id}/submit`)
+      .set('Authorization', 'Bearer token-2')
+      .set('Idempotency-Key', 'rejected-account-submit-1');
+    expect(submitted.status).toBe(200);
+    expect(submitted.body.data.status).toBe('PENDING_REVIEW');
+
+    // The account's own status is untouched by campaign submission.
+    const account = await getTestPrisma().fundraisingVerificationAccount.findUnique({
+      where: { ownerUserId: 2 },
+    });
+    expect(account?.status).toBe('REJECTED');
+  });
+
+  it('keeps withdrawal gated on approved verification while campaigns are not', async () => {
+    const { fundraisingStore } = buildApp();
+
+    // No verification account at all → withdrawal blocked.
+    await expect(fundraisingStore.assertCanWithdrawFunds(2)).rejects.toMatchObject({
+      code: 'ACCOUNT_NOT_VERIFIED',
+      statusCode: 403,
+    });
+
+    // Present but not yet approved → still blocked.
+    await fundraisingStore.upsertAccount(2, { fullName: 'Pending Payout User' });
+    await getTestPrisma().fundraisingVerificationAccount.update({
+      where: { ownerUserId: 2 },
+      data: { status: 'PENDING' },
+    });
+    await expect(fundraisingStore.assertCanWithdrawFunds(2)).rejects.toMatchObject({
+      code: 'ACCOUNT_NOT_VERIFIED',
+      statusCode: 403,
+    });
+
+    // Rejected → still blocked.
+    await getTestPrisma().fundraisingVerificationAccount.update({
+      where: { ownerUserId: 2 },
+      data: { status: 'REJECTED' },
+    });
+    await expect(fundraisingStore.assertCanWithdrawFunds(2)).rejects.toMatchObject({
+      code: 'ACCOUNT_NOT_VERIFIED',
+      statusCode: 403,
+    });
+
+    // Approved → payout access granted.
+    await getTestPrisma().fundraisingVerificationAccount.update({
+      where: { ownerUserId: 2 },
+      data: { status: 'VERIFIED' },
+    });
+    await expect(fundraisingStore.assertCanWithdrawFunds(2)).resolves.toBeUndefined();
+  });
+
+  it('treats body idempotency keys as submit idempotency for mobile clients', async () => {
+    const { app } = buildApp();
+
+    const draft = await request(app)
+      .post('/api/v1/fundraising/campaigns/drafts')
+      .set('Authorization', 'Bearer token-1')
+      .send({
+        title: 'Body idempotent fundraiser',
+        caption: 'The mobile client sends idempotency in the JSON body.',
+        category: 'PET_HEALTH',
+        fundingMode: 'ONE_TIME',
+        currencyCode: 'BDT',
+        targetAmountMinor: '125000',
+        beneficiaryType: 'PET',
+        beneficiaryName: 'Luna',
+        locationText: 'Dhaka',
+        deadline: '2026-12-31T23:59:00.000Z',
+        mediaIds: [1],
+      });
+    expect(draft.status).toBe(201);
+
+    const first = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${draft.body.data.id}/submit`)
+      .set('Authorization', 'Bearer token-1')
+      .send({ idempotencyKey: 'mobile-body-submit-1' });
+    expect(first.status).toBe(200);
+    expect(first.body.data.status).toBe('PENDING_REVIEW');
+
+    const second = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${draft.body.data.id}/submit`)
+      .set('Authorization', 'Bearer token-1')
+      .send({ idempotencyKey: 'mobile-body-submit-1' });
+    expect(second.status).toBe(200);
+    expect(second.body.data.status).toBe('PENDING_REVIEW');
+    expect(second.body.data.post.id).toBe(first.body.data.post.id);
+  });
+
+  it('accepts ONGOING campaigns with monthly goal and no one-time deadline', async () => {
+    const { app } = buildApp();
+
+    const draft = await request(app)
+      .post('/api/v1/fundraising/campaigns/drafts')
+      .set('Authorization', 'Bearer token-1')
+      .send({
+        title: 'Ongoing shelter support',
+        caption: 'Monthly operating support for a local shelter.',
+        category: 'SHELTER',
+        fundingMode: 'ONGOING',
+        currencyCode: 'BDT',
+        monthlyGoalMinor: '50000',
+        beneficiaryType: 'ORGANIZATION',
+        beneficiaryName: 'Dhaka Shelter',
+        locationText: 'Dhaka',
+        mediaIds: [1],
+      });
+    expect(draft.status).toBe(201);
+    expect(draft.body.data.fundingMode).toBe('ONGOING');
+
+    const submitted = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${draft.body.data.id}/submit`)
+      .set('Authorization', 'Bearer token-1')
+      .set('Idempotency-Key', 'ongoing-submit-1');
+    expect(submitted.status).toBe(200);
+    expect(submitted.body.data.status).toBe('PENDING_REVIEW');
+    expect(submitted.body.data.fundingMode).toBe('ONGOING');
+    expect(submitted.body.data.monthlyGoalMinor).toBe('50000');
+    expect(submitted.body.data.deadline).toBeNull();
+  });
+
+  it('persists DNCC location fields through draft creation and submission', async () => {
+    const { app } = buildApp();
+    const prisma = getTestPrisma();
+    const deadline = new Date(Date.now() + 1000 * 60 * 60 * 24 * 21);
+
+    const cityCorporation = await prisma.bdArea.findFirst({
+      where: { code: 'CC-DNCC' },
+    });
+    const zone = await prisma.bdArea.findFirst({
+      where: { code: 'ZONE-DNCC-03' },
+    });
+    const ward = await prisma.bdArea.findFirst({
+      where: { code: 'WARD-DNCC-18' },
+    });
+    expect(cityCorporation).toBeTruthy();
+    expect(zone).toBeTruthy();
+    expect(ward).toBeTruthy();
+    expect(cityCorporation!.districtId).not.toBeNull();
+    const district = await prisma.bdDistrict.findUnique({
+      where: { id: cityCorporation!.districtId! },
+    });
+    expect(district).toBeTruthy();
+    expect(district!.divisionId).not.toBeNull();
+    const division = await prisma.bdDivision.findUnique({
+      where: { id: district!.divisionId! },
+    });
+    expect(division).toBeTruthy();
+
+    const draft = await request(app)
+      .post('/api/v1/fundraising/campaigns/drafts')
+      .set('Authorization', 'Bearer token-1')
+      .set('Idempotency-Key', 'urban-dncc-draft-1')
+      .send({
+        title: 'DNCC fundraiser',
+        caption: 'Testing the urban location contract',
+        category: 'PET_HEALTH',
+        fundingMode: 'ONE_TIME',
+        currencyCode: 'BDT',
+        targetAmountMinor: '125000',
+        beneficiaryType: 'PET',
+        beneficiaryName: 'Luna',
+        locationText: 'DNCC, Dhaka',
+        bdAddressMode: 'URBAN',
+        bdDivisionId: division!.id,
+        bdDistrictId: district!.id,
+        bdCityCorporationId: cityCorporation!.id,
+        bdZoneId: zone!.id,
+        bdWardId: ward!.id,
+        endsAt: deadline.toISOString(),
+        deadline: deadline.toISOString(),
+        mediaIds: [1],
+      });
+    expect(draft.status).toBe(201);
+    expect(draft.body.data.bdAddressMode).toBe('URBAN');
+    expect(draft.body.data.bdCityCorporationId).toBe(cityCorporation!.id);
+    expect(draft.body.data.bdZoneId).toBe(zone!.id);
+    expect(draft.body.data.bdWardId).toBe(ward!.id);
+
+    const submitted = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${draft.body.data.id}/submit`)
+      .set('Authorization', 'Bearer token-1')
+      .set('Idempotency-Key', 'urban-dncc-submit-1');
+    expect(submitted.status).toBe(200);
+    expect(submitted.body.data.status).toBe('PENDING_REVIEW');
+    expect(submitted.body.data.bdAddressMode).toBe('URBAN');
+    expect(submitted.body.data.bdCityCorporationId).toBe(cityCorporation!.id);
+    expect(submitted.body.data.bdZoneId).toBe(zone!.id);
+    expect(submitted.body.data.bdWardId).toBe(ward!.id);
+  });
+
+  it('persists DNCC location fields patched after draft creation', async () => {
+    const { app } = buildApp();
+    const prisma = getTestPrisma();
+    const deadline = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30);
+
+    const cityCorporation = await prisma.bdArea.findFirst({
+      where: { code: 'CC-DNCC' },
+    });
+    const zone = await prisma.bdArea.findFirst({
+      where: { code: 'ZONE-DNCC-03' },
+    });
+    const ward = await prisma.bdArea.findFirst({
+      where: { code: 'WARD-DNCC-18' },
+    });
+    expect(cityCorporation).toBeTruthy();
+    expect(zone).toBeTruthy();
+    expect(ward).toBeTruthy();
+    const district = await prisma.bdDistrict.findUnique({
+      where: { id: cityCorporation!.districtId! },
+    });
+    expect(district).toBeTruthy();
+    const division = await prisma.bdDivision.findUnique({
+      where: { id: district!.divisionId! },
+    });
+    expect(division).toBeTruthy();
+
+    const draft = await request(app)
+      .post('/api/v1/fundraising/campaigns/drafts')
+      .set('Authorization', 'Bearer token-1')
+      .send({
+        title: 'Patch DNCC fundraiser',
+        caption: 'Testing urban location updates after draft creation',
+        category: 'PET_HEALTH',
+        fundingMode: 'ONE_TIME',
+        currencyCode: 'BDT',
+        targetAmountMinor: '125000',
+        beneficiaryType: 'PET',
+        beneficiaryName: 'Luna',
+        locationText: 'Dhaka',
+        deadline: deadline.toISOString(),
+        mediaIds: [1],
+      });
+    expect(draft.status).toBe(201);
+
+    const updated = await request(app)
+      .patch(`/api/v1/fundraising/campaigns/${draft.body.data.id}/draft`)
+      .set('Authorization', 'Bearer token-1')
+      .send({
+        locationText: 'DNCC, Dhaka',
+        bdAddressMode: 'URBAN',
+        bdDivisionId: division!.id,
+        bdDistrictId: district!.id,
+        bdCityCorporationId: cityCorporation!.id,
+        bdZoneId: zone!.id,
+        bdWardId: ward!.id,
+      });
+    expect(updated.status).toBe(200);
+    expect(updated.body.data.bdAddressMode).toBe('URBAN');
+    expect(updated.body.data.bdCityCorporationId).toBe(cityCorporation!.id);
+    expect(updated.body.data.bdZoneId).toBe(zone!.id);
+    expect(updated.body.data.bdWardId).toBe(ward!.id);
+
+    const submitted = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${draft.body.data.id}/submit`)
+      .set('Authorization', 'Bearer token-1')
+      .set('Idempotency-Key', 'patched-dncc-submit-1');
+    expect(submitted.status).toBe(200);
+    expect(submitted.body.data.status).toBe('PENDING_REVIEW');
+    expect(submitted.body.data.bdCityCorporationId).toBe(cityCorporation!.id);
+    expect(submitted.body.data.bdZoneId).toBe(zone!.id);
+    expect(submitted.body.data.bdWardId).toBe(ward!.id);
+  });
+
   it('rejects unknown fields and malformed dateOfBirth on the account PATCH payload', async () => {
     const { app } = buildApp();
 
@@ -463,6 +910,79 @@ describe('fundraising contracts', () => {
       .set('Authorization', 'Bearer token-1');
     expect(republish.status).toBe(409);
     expect(republish.body.error.code).toBe('CONFLICT');
+  });
+
+  it('exposes exact UTC ISO-8601 timestamps for startsAt/endsAt/deadline, and draft reopen reports current media status', async () => {
+    const { app } = buildApp();
+
+    const draft = await request(app)
+      .post('/api/v1/fundraising/campaigns/drafts')
+      .set('Authorization', 'Bearer token-1')
+      .send({
+        title: 'Deadline contract check',
+        caption: 'Verifying UTC timestamps',
+        category: 'PET_HEALTH',
+        fundingMode: 'ONE_TIME',
+        currencyCode: 'BDT',
+        targetAmountMinor: '125000',
+        beneficiaryType: 'PET',
+        beneficiaryName: 'Luna',
+        locationText: 'Dhaka',
+        startsAt: '2026-01-01T00:00:00.000Z',
+        endsAt: '2026-12-31T00:00:00.000Z',
+        deadline: '2026-12-31T00:00:00.000Z',
+        mediaIds: [1],
+      });
+    expect(draft.status).toBe(201);
+    const isoUtc = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+    expect(draft.body.data.startsAt).toMatch(isoUtc);
+    expect(draft.body.data.endsAt).toMatch(isoUtc);
+    expect(draft.body.data.deadline).toMatch(isoUtc);
+
+    const reopened = await request(app)
+      .get(`/api/v1/fundraising/campaigns/${draft.body.data.id}/draft`)
+      .set('Authorization', 'Bearer token-1');
+    expect(reopened.status).toBe(200);
+    expect(reopened.body.data.startsAt).toMatch(isoUtc);
+    expect(reopened.body.data.endsAt).toMatch(isoUtc);
+    expect(reopened.body.data.deadline).toMatch(isoUtc);
+    // Draft reopen must report each bound media's current status, not just
+    // its URL, so the client can tell READY apart from still-processing.
+    const boundMedia = reopened.body.data.post.media[0].media;
+    expect(boundMedia.status).toBe('READY');
+    expect(typeof boundMedia.url).toBe('string');
+
+    const campaign = await request(app)
+      .post('/api/v1/fundraising/campaigns')
+      .set('Authorization', 'Bearer token-1')
+      .send({
+        title: 'Published deadline check',
+        caption: 'Verifying UTC timestamps on a live campaign',
+        category: 'PET_HEALTH',
+        fundingMode: 'ONE_TIME',
+        currencyCode: 'BDT',
+        targetAmountMinor: '125000',
+        beneficiaryType: 'PET',
+        beneficiaryName: 'Luna',
+        locationText: 'Dhaka',
+        endsAt: '2026-12-31T00:00:00.000Z',
+        deadline: '2026-12-31T00:00:00.000Z',
+        mediaIds: [1],
+      });
+    expect(campaign.status).toBe(201);
+    expect(campaign.body.data.endsAt).toMatch(isoUtc);
+    expect(campaign.body.data.deadline).toMatch(isoUtc);
+
+    const detail = await request(app).get(`/api/v1/fundraising/campaigns/${campaign.body.data.id}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.endsAt).toMatch(isoUtc);
+    expect(detail.body.data.deadline).toMatch(isoUtc);
+
+    const feed = await request(app).get('/api/v1/fundraising/feed');
+    const feedItem = (feed.body.data.items as Array<{ id: number; deadline: string }>).find(
+      (item) => item.id === campaign.body.data.id,
+    );
+    expect(feedItem?.deadline).toMatch(isoUtc);
   });
 
   it('enforces campaign ownership authorization', async () => {

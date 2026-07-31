@@ -36,6 +36,10 @@ export class AppError extends Error {
     return new AppError(ErrorCode.UNAUTHORIZED, message, 401);
   }
 
+  static unauthenticated(message = 'Authentication required', details?: unknown): AppError {
+    return new AppError(ErrorCode.UNAUTHENTICATED, message, 401, details);
+  }
+
   static forbidden(message = 'Forbidden'): AppError {
     return new AppError(ErrorCode.FORBIDDEN, message, 403);
   }
@@ -82,6 +86,32 @@ export class AppError extends Error {
     details?: unknown,
   ): AppError {
     return new AppError(ErrorCode.MEDIA_SIZE_EXCEEDED, message, 413, details);
+  }
+
+  static mediaNotOwned(message = 'Media not found', details?: unknown): AppError {
+    return new AppError(ErrorCode.MEDIA_NOT_OWNED, message, 403, details);
+  }
+
+  static mediaBindingConflict(
+    message = 'This media is already attached',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.MEDIA_BINDING_CONFLICT, message, 409, details);
+  }
+
+  static uploadIncomplete(message = 'Upload is incomplete', details?: unknown): AppError {
+    return new AppError(ErrorCode.UPLOAD_INCOMPLETE, message, 422, details);
+  }
+
+  static invalidDraftState(message = 'Draft is not in a valid state', details?: unknown): AppError {
+    return new AppError(ErrorCode.INVALID_DRAFT_STATE, message, 409, details);
+  }
+
+  static retryableUploadFailure(
+    message = 'Upload failed. Please retry.',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.RETRYABLE_UPLOAD_FAILURE, message, 503, details);
   }
 
   static resourceOwnershipRequired(
@@ -142,6 +172,21 @@ export class AppError extends Error {
 
   static fundraiserEditForbidden(message = 'Campaign not found', details?: unknown): AppError {
     return new AppError(ErrorCode.FUNDRAISER_EDIT_FORBIDDEN, message, 403, details);
+  }
+
+  /** Payout-sensitive operations only — never campaign submission. */
+  static fundraisingAccountNotVerified(
+    message = 'Complete fundraising verification before withdrawing funds',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.FUNDRAISING_ACCOUNT_NOT_VERIFIED, message, 403, details);
+  }
+
+  static paymentProviderUnavailable(
+    message = 'The payment provider is temporarily unavailable',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, message, 503, details);
   }
 
   static conflict(message: string, details?: unknown): AppError {

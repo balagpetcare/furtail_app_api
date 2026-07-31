@@ -15,6 +15,7 @@ import {
 import { getPrisma } from '../infrastructure/db/prisma-client';
 import { createPrismaLocationDataSource } from '../modules/locations/prisma-location-data-source';
 import { createLocationStore, type LocationStore } from '../modules/locations/location-store';
+import { env } from '../config/env';
 
 export interface FundraisingRoutesDeps {
   verifier: TokenVerifier;
@@ -41,17 +42,33 @@ async function assertLocationHierarchyValid(
   const wardId = toOptionalPositiveInt(body.bdWardId);
   const upazilaId = toOptionalPositiveInt(body.bdUpazilaId);
   const unionId = toOptionalPositiveInt(body.bdUnionId);
-  const areaId = toOptionalPositiveInt(body.bdAreaId);
-  if (
-    divisionId === undefined &&
-    districtId === undefined &&
-    cityCorporationId === undefined &&
-    zoneId === undefined &&
-    wardId === undefined &&
-    upazilaId === undefined &&
-    unionId === undefined &&
-    areaId === undefined
-  ) {
+  const hasBangladeshFields =
+    divisionId !== undefined ||
+    districtId !== undefined ||
+    cityCorporationId !== undefined ||
+    zoneId !== undefined ||
+    wardId !== undefined ||
+    upazilaId !== undefined ||
+    unionId !== undefined;
+  const hasInternationalFields =
+    body.isInternational === true ||
+    body.isInternational === 'true' ||
+    body.isInternational === 1 ||
+    body.isInternational === '1' ||
+    toText(body.countryName) !== null ||
+    toText(body.stateName) !== null ||
+    toText(body.cityName) !== null ||
+    toText(body.addressLine) !== null ||
+    toText(body.formattedAddress) !== null;
+  if (!hasBangladeshFields && !hasInternationalFields) {
+    return;
+  }
+  if (hasBangladeshFields && hasInternationalFields) {
+    throw AppError.validation(
+      'Do not mix Bangladesh hierarchy fields with international location fields',
+    );
+  }
+  if (hasInternationalFields && !hasBangladeshFields) {
     return;
   }
   const result = await locationStore.validateSelection({
@@ -62,7 +79,6 @@ async function assertLocationHierarchyValid(
     wardId,
     upazilaId,
     unionId,
-    areaId,
   });
   if (!result.valid) {
     throw AppError.locationParentInvalid(result.reason ?? 'Invalid location selection');
@@ -129,6 +145,22 @@ export function fundraisingRoutes(deps: FundraisingRoutesDeps): Router {
       const body = validateAccountPatchBody(req.body ?? {});
       const account = await deps.fundraisingStore.upsertAccount(userId, body);
       sendSuccess(res, account, { requestId: req.requestId, correlationId: req.correlationId });
+    }),
+  );
+
+  router.get(
+    '/api/v1/fundraising/payout/catalog',
+    authenticate,
+    route(async (req, res) => {
+      sendSuccess(res, [], { requestId: req.requestId, correlationId: req.correlationId });
+    }),
+  );
+
+  router.get(
+    '/api/v1/fundraising/payout/methods',
+    authenticate,
+    route(async (req, res) => {
+      sendSuccess(res, [], { requestId: req.requestId, correlationId: req.correlationId });
     }),
   );
 
@@ -439,6 +471,12 @@ export function fundraisingRoutes(deps: FundraisingRoutesDeps): Router {
           isAnonymous: req.body?.isAnonymous,
           consentAccepted: req.body?.consentAccepted,
           paymentMethodLabel: req.body?.paymentMethodLabel,
+          donorName: req.body?.donorName,
+          donorEmail: req.body?.donorEmail,
+          donorPhone: req.body?.donorPhone,
+          donorAddress: req.body?.donorAddress,
+          donorCity: req.body?.donorCity,
+          ipAddress: req.ip,
         },
         idempotencyKey,
       );
@@ -471,6 +509,45 @@ export function fundraisingRoutes(deps: FundraisingRoutesDeps): Router {
       sendSuccess(res, status, { requestId: req.requestId, correlationId: req.correlationId });
     }),
   );
+
+  /**
+   * EPS redirects the payer's *browser* here after checkout — this is not
+   * a trusted server-to-server push, so the outcome implied by the path
+   * (success/fail/cancel) or any query parameter is never applied directly.
+   * Every hit — regardless of which of the three paths — reconciles via
+   * EPS's authoritative, x-hash-authenticated status API before doing
+   * anything, then redirects the browser into the Flutter app's own deep
+   * link with the *verified* outcome, never the unverified one EPS implied.
+   */
+  const epsReturnHandler = (fallbackOutcome: 'success' | 'fail' | 'cancel') =>
+    asyncHandler(async (req: Request, res: Response) => {
+      const referenceId =
+        typeof req.query.merchantTransactionId === 'string' ? req.query.merchantTransactionId : '';
+      if (!referenceId) {
+        res.redirect(
+          `${env.FUNDRAISING_APP_RETURN_DEEP_LINK}?status=error&reason=missing_reference`,
+        );
+        return;
+      }
+      let verifiedStatus: string;
+      try {
+        const result = await deps.fundraisingStore.reconcileEpsPayment(referenceId);
+        verifiedStatus = String((result as { status?: unknown }).status ?? fallbackOutcome);
+      } catch {
+        // Reconciliation failure must never be reported to the app as a
+        // false success — fall back to a safe "pending" signal so Flutter
+        // re-queries status instead of assuming anything.
+        verifiedStatus = 'PENDING_VERIFICATION';
+      }
+      const redirectUrl = `${env.FUNDRAISING_APP_RETURN_DEEP_LINK}?status=${encodeURIComponent(
+        verifiedStatus,
+      )}&referenceId=${encodeURIComponent(referenceId)}`;
+      res.redirect(redirectUrl);
+    });
+
+  router.get('/api/v1/fundraising/payments/eps/success', epsReturnHandler('success'));
+  router.get('/api/v1/fundraising/payments/eps/fail', epsReturnHandler('fail'));
+  router.get('/api/v1/fundraising/payments/eps/cancel', epsReturnHandler('cancel'));
 
   router.post(
     '/api/v1/fundraising/payments/webhooks',
@@ -579,12 +656,10 @@ const ALLOWED_ACCOUNT_PATCH_FIELDS = new Set([
   'districtId',
   'upazilaId',
   'unionId',
-  'areaId',
   'bdDivisionId',
   'bdDistrictId',
   'bdUpazilaId',
   'bdUnionId',
-  'bdAreaId',
   'bdAddressMode',
   'bdCityCorporationId',
   'bdZoneId',
@@ -629,6 +704,34 @@ function validateAccountPatchBody(body: Record<string, unknown>): Record<string,
   if (has(result, 'isInternational') && typeof result.isInternational !== 'boolean') {
     throw AppError.validation('isInternational must be a boolean');
   }
+  const hasBangladeshFields =
+    has(result, 'divisionId') ||
+    has(result, 'districtId') ||
+    has(result, 'upazilaId') ||
+    has(result, 'unionId') ||
+    has(result, 'bdDivisionId') ||
+    has(result, 'bdDistrictId') ||
+    has(result, 'bdUpazilaId') ||
+    has(result, 'bdUnionId') ||
+    has(result, 'bdAddressMode') ||
+    has(result, 'bdCityCorporationId') ||
+    has(result, 'bdZoneId') ||
+    has(result, 'bdWardId');
+  const hasInternationalFields =
+    (has(result, 'isInternational') && result.isInternational === true) ||
+    has(result, 'countryName') ||
+    has(result, 'stateName') ||
+    has(result, 'cityName') ||
+    has(result, 'addressLine') ||
+    has(result, 'latitude') ||
+    has(result, 'longitude') ||
+    has(result, 'formattedAddress');
+  if (result.isInternational === true && hasBangladeshFields) {
+    throw AppError.validation('International accounts cannot include Bangladesh location fields');
+  }
+  if (result.isInternational !== true && hasInternationalFields && hasBangladeshFields) {
+    throw AppError.validation('Do not mix international and Bangladesh location fields');
+  }
   return result;
 }
 
@@ -637,8 +740,12 @@ function has(obj: Record<string, unknown>, key: string): boolean {
 }
 
 function readIdempotencyKey(req: Request): string | undefined {
+  const body = req.body as Record<string, unknown> | undefined;
   return (
-    req.header('Idempotency-Key')?.trim() || req.header('idempotency-key')?.trim() || undefined
+    req.header('Idempotency-Key')?.trim() ||
+    req.header('idempotency-key')?.trim() ||
+    toText(body?.idempotencyKey) ||
+    undefined
   );
 }
 
@@ -670,6 +777,16 @@ function mapFundraisingError(error: unknown): AppError {
         return AppError.fundraiserNotFound(error.message);
       case 'FORBIDDEN':
         return AppError.authorizationDenied(error.message);
+      case 'MEDIA_NOT_OWNED':
+        return AppError.mediaNotOwned(error.message);
+      case 'MEDIA_BINDING_CONFLICT':
+        return AppError.mediaBindingConflict(error.message);
+      case 'UPLOAD_INCOMPLETE':
+        return AppError.uploadIncomplete(error.message);
+      case 'INVALID_DRAFT_STATE':
+        return AppError.invalidDraftState(error.message);
+      case 'RETRYABLE_UPLOAD_FAILURE':
+        return AppError.retryableUploadFailure(error.message);
       case 'ACCESS_DENIED':
         return AppError.fundraiserAccessDenied(error.message);
       case 'NOT_PUBLIC':
@@ -678,6 +795,10 @@ function mapFundraisingError(error: unknown): AppError {
         return AppError.fundraiserEditForbidden(error.message);
       case 'NOT_DONATABLE':
         return AppError.fundraiserNotDonatable(error.message);
+      case 'ACCOUNT_NOT_VERIFIED':
+        return AppError.fundraisingAccountNotVerified(error.message);
+      case 'PAYMENT_PROVIDER_UNAVAILABLE':
+        return AppError.paymentProviderUnavailable(error.message);
       case 'CONFLICT':
         return AppError.conflict(error.message);
       case 'VALIDATION':

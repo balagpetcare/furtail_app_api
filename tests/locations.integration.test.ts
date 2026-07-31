@@ -243,7 +243,8 @@ function buildFakeDataSource(): LocationDataSource {
       sortOrder: 18,
       isActive: true,
     },
-    {      id: 7,
+    {
+      id: 7,
       code: 'WARD-HIST-01',
       nameEn: 'Historic Ward',
       nameBn: null,
@@ -441,11 +442,11 @@ describe('canonical Bangladesh location endpoints', () => {
     expect(areaItems[0]?.unionId).toBe(1);
   });
 
-  it('allows a valid rural path even when no area records exist for the selected upazila', async () => {
+  it('allows a valid rural path without requiring an area record once a union is selected', async () => {
     const app = buildApp();
     const validation = await request(app)
       .post('/api/v1/location-master/validate-selection')
-      .send({ divisionId: 1, districtId: 1, upazilaId: 3 });
+      .send({ divisionId: 1, districtId: 1, upazilaId: 1, unionId: 1 });
     expect(validation.status).toBe(200);
     expect(validation.body.data.valid).toBe(true);
   });
@@ -491,9 +492,7 @@ describe('canonical Bangladesh location endpoints', () => {
     );
     expect(ccItem).toBeDefined();
 
-    const zones = await request(app).get(
-      `/api/v1/common/bd/zones?cityCorporationId=${ccItem!.id}`,
-    );
+    const zones = await request(app).get(`/api/v1/common/bd/zones?cityCorporationId=${ccItem!.id}`);
     expect(zones.status).toBe(200);
     const zoneItems = zones.body.data.items as Array<{ code: string; id: number }>;
     expect(zoneItems.map((z) => z.code)).toEqual(['ZONE-01', 'ZONE-DNCC-03']);
@@ -506,15 +505,13 @@ describe('canonical Bangladesh location endpoints', () => {
     const wardItems = wards.body.data.items as Array<{ code: string; id: number }>;
     expect(wardItems.map((w) => w.code)).toEqual(['WARD-DNCC-18']);
 
-    const validation = await request(app)
-      .post('/api/v1/location-master/validate-selection')
-      .send({
-        divisionId: 1,
-        districtId: 1,
-        cityCorporationId: ccItem!.id,
-        zoneId: zone3!.id,
-        wardId: wardItems[0]!.id,
-      });
+    const validation = await request(app).post('/api/v1/location-master/validate-selection').send({
+      divisionId: 1,
+      districtId: 1,
+      cityCorporationId: ccItem!.id,
+      zoneId: zone3!.id,
+      wardId: wardItems[0]!.id,
+    });
     expect(validation.status).toBe(200);
     expect(validation.body.data.valid).toBe(true);
   });
@@ -626,10 +623,10 @@ describe('canonical Bangladesh location endpoints', () => {
     it('validates a correct urban chain and rejects mismatched urban/rural branches', async () => {
       const app = buildApp();
 
-      // Valid urban: District 1 (Dhaka), CC 2 (DNCC), Zone 3 (Zone 1), Ward 4 (Ward 1), Area 5 (Uttara Sector 1)
+      // Valid urban: District 1 (Dhaka), CC 2 (DNCC), Zone 3 (Zone 1), Ward 4 (Ward 1)
       const okUrban = await request(app)
         .post('/api/v1/location-master/validate-selection')
-        .send({ divisionId: 1, districtId: 1, cityCorporationId: 2, zoneId: 3, wardId: 4, areaId: 5 });
+        .send({ divisionId: 1, districtId: 1, cityCorporationId: 2, zoneId: 3, wardId: 4 });
       expect(okUrban.status).toBe(200);
       expect(okUrban.body.data.valid).toBe(true);
 
@@ -640,12 +637,19 @@ describe('canonical Bangladesh location endpoints', () => {
       expect(mixed.status).toBe(200);
       expect(mixed.body.data.valid).toBe(false);
 
-      // Wrong parent: zoneId 3 (Zone 1 under CC 2) with CC 99 (invalid)
+      // Wrong parent: zoneId 3 (Zone 1) with the wrong city corporation
       const wrongZoneParent = await request(app)
         .post('/api/v1/location-master/validate-selection')
         .send({ divisionId: 1, districtId: 1, cityCorporationId: 99, zoneId: 3 });
       expect(wrongZoneParent.status).toBe(200);
       expect(wrongZoneParent.body.data.valid).toBe(false);
+
+      // Wrong parent: wardId 4 belongs to zoneId 3, not zoneId 99
+      const wrongWardParent = await request(app)
+        .post('/api/v1/location-master/validate-selection')
+        .send({ divisionId: 1, districtId: 1, cityCorporationId: 2, zoneId: 99, wardId: 4 });
+      expect(wrongWardParent.status).toBe(200);
+      expect(wrongWardParent.body.data.valid).toBe(false);
     });
 
     it('exposes location-master endpoints for urban entities correctly', async () => {
@@ -673,4 +677,3 @@ describe('canonical Bangladesh location endpoints', () => {
     });
   });
 });
-

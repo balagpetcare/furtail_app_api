@@ -18,16 +18,20 @@ export interface SocialRoutesDeps {
   socialStore?: SocialCoreStore;
 }
 
-const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 80 * 1024 * 1024;
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = MAX_VIDEO_BYTES;
 
-const ALLOWED_MIME_EXTENSIONS: Record<string, string[]> = {
-  'image/jpeg': ['jpg', 'jpeg'],
-  'image/png': ['png'],
-  'image/webp': ['webp'],
-  'image/gif': ['gif'],
-  'video/mp4': ['mp4'],
-  'video/quicktime': ['mov'],
-  'video/webm': ['webm'],
+const SUPPORTED_UPLOAD_TYPES: Record<string, { extensions: string[]; maxBytes: number }> = {
+  'image/jpeg': { extensions: ['jpg', 'jpeg'], maxBytes: MAX_IMAGE_BYTES },
+  'image/png': { extensions: ['png'], maxBytes: MAX_IMAGE_BYTES },
+  'image/webp': { extensions: ['webp'], maxBytes: MAX_IMAGE_BYTES },
+  'image/gif': { extensions: ['gif'], maxBytes: MAX_IMAGE_BYTES },
+  'application/pdf': { extensions: ['pdf'], maxBytes: MAX_FILE_BYTES },
+  'video/mp4': { extensions: ['mp4'], maxBytes: MAX_VIDEO_BYTES },
+  'video/quicktime': { extensions: ['mov'], maxBytes: MAX_VIDEO_BYTES },
+  'video/webm': { extensions: ['webm'], maxBytes: MAX_VIDEO_BYTES },
 };
 
 function extensionOf(filename: string): string {
@@ -39,12 +43,12 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_UPLOAD_BYTES },
   fileFilter: (_req, file, callback) => {
-    const allowedExtensions = ALLOWED_MIME_EXTENSIONS[file.mimetype];
-    if (!allowedExtensions) {
+    const allowed = SUPPORTED_UPLOAD_TYPES[file.mimetype];
+    if (!allowed) {
       callback(AppError.mediaTypeUnsupported(`Unsupported media type: ${file.mimetype}`));
       return;
     }
-    if (!allowedExtensions.includes(extensionOf(file.originalname || ''))) {
+    if (!allowed.extensions.includes(extensionOf(file.originalname || ''))) {
       callback(AppError.mediaTypeUnsupported('The file extension does not match its content type'));
       return;
     }
@@ -115,6 +119,8 @@ function inferContentTypeFromPath(filePath: string): string {
       return 'video/quicktime';
     case '.webm':
       return 'video/webm';
+    case '.pdf':
+      return 'application/pdf';
     default:
       return 'application/octet-stream';
   }
@@ -232,6 +238,16 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
         undefined;
       const purpose =
         (typeof req.body?.purpose === 'string' && req.body.purpose.trim()) || 'generic';
+      const uploadType = SUPPORTED_UPLOAD_TYPES[req.file.mimetype || ''];
+      if (!uploadType) {
+        throw AppError.mediaTypeUnsupported(`Unsupported media type: ${req.file.mimetype}`);
+      }
+      if (req.file.size > uploadType.maxBytes) {
+        throw AppError.mediaSizeExceeded('This file exceeds the maximum allowed size', {
+          maxBytes: uploadType.maxBytes,
+          mimetype: req.file.mimetype,
+        });
+      }
 
       const media = await store.uploadMedia(
         userId,

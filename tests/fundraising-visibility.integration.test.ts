@@ -153,14 +153,14 @@ describe('fundraiser visibility and authorization policy', () => {
     return { campaignId };
   });
 
-  it('blocks a non-owner from reading a draft/pending-review campaign — 403 FUNDRAISER_NOT_PUBLIC, not leaked as a generic 500', async () => {
+  it('lets a non-owner and a guest read a PENDING_REVIEW campaign, and it appears in the public feed — moderation status and donation eligibility are separate concerns', async () => {
     const { app } = buildApp();
 
     const created = await request(app)
       .post('/api/v1/fundraising/campaigns')
       .set('Authorization', 'Bearer owner')
       .send({
-        title: 'Not yet public',
+        title: 'Awaiting moderation',
         caption: 'Still under review',
         category: 'PET_HEALTH',
         fundingMode: 'ONE_TIME',
@@ -172,24 +172,63 @@ describe('fundraiser visibility and authorization policy', () => {
         deadline: '2026-12-31T00:00:00.000Z',
         mediaIds: [1],
       });
+    expect(created.body.data.status).toBe('PENDING_REVIEW');
     const campaignId = created.body.data.id as number;
 
     const nonOwnerRead = await request(app)
       .get(`/api/v1/fundraising/campaigns/${campaignId}`)
       .set('Authorization', 'Bearer non-owner');
-    expect(nonOwnerRead.status).toBe(403);
-    expect(nonOwnerRead.body.error.code).toBe('FUNDRAISER_NOT_PUBLIC');
+    expect(nonOwnerRead.status).toBe(200);
+    expect(nonOwnerRead.body.data.status).toBe('PENDING_REVIEW');
+    expect(nonOwnerRead.body.data.donationAllowed).toBe(true);
 
     const guestRead = await request(app).get(`/api/v1/fundraising/campaigns/${campaignId}`);
-    expect(guestRead.status).toBe(403);
-    expect(guestRead.body.error.code).toBe('FUNDRAISER_NOT_PUBLIC');
+    expect(guestRead.status).toBe(200);
+    expect(guestRead.body.data.donationAllowed).toBe(true);
 
-    // The same non-public campaign must never appear in the public feed either.
+    // A PENDING_REVIEW campaign must appear in the public feed too.
     const feed = await request(app).get('/api/v1/fundraising/feed');
     expect(feed.status).toBe(200);
     expect((feed.body.data.items as Array<{ id: number }>).some((c) => c.id === campaignId)).toBe(
-      false,
+      true,
     );
+
+    // ...and must accept donations.
+    const donate = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${campaignId}/donate`)
+      .set('Authorization', 'Bearer non-owner')
+      .set('Idempotency-Key', 'donate-pending-review-1')
+      .send({
+        amount: '5000',
+        currencyCode: 'BDT',
+        returnUrl: 'https://app.example/return',
+        cancelUrl: 'https://app.example/cancel',
+        consentAccepted: true,
+      });
+    expect(donate.status).toBe(200);
+    expect(donate.body.data.donationIntent.status).toBe('PENDING');
+  });
+
+  it('blocks a non-owner from reading a DRAFT campaign — 403 FUNDRAISER_NOT_PUBLIC, not leaked as a generic 500', async () => {
+    const { app } = buildApp();
+    await forceCampaignStatus(app, PUBLIC_CAMPAIGN_ID, 'DRAFT');
+
+    const nonOwnerRead = await request(app)
+      .get(`/api/v1/fundraising/campaigns/${PUBLIC_CAMPAIGN_ID}`)
+      .set('Authorization', 'Bearer non-owner');
+    expect(nonOwnerRead.status).toBe(403);
+    expect(nonOwnerRead.body.error.code).toBe('FUNDRAISER_NOT_PUBLIC');
+
+    const guestRead = await request(app).get(`/api/v1/fundraising/campaigns/${PUBLIC_CAMPAIGN_ID}`);
+    expect(guestRead.status).toBe(403);
+    expect(guestRead.body.error.code).toBe('FUNDRAISER_NOT_PUBLIC');
+
+    // A DRAFT campaign must never appear in the public feed either.
+    const feed = await request(app).get('/api/v1/fundraising/feed');
+    expect(feed.status).toBe(200);
+    expect(
+      (feed.body.data.items as Array<{ id: number }>).some((c) => c.id === PUBLIC_CAMPAIGN_ID),
+    ).toBe(false);
   });
 
   it('lets an admin/moderator read a campaign that is not theirs and not public', async () => {
@@ -337,5 +376,73 @@ describe('fundraiser visibility and authorization policy', () => {
       });
     expect(donate.status).toBe(403);
     expect(donate.body.error.code).toBe('FUNDRAISER_NOT_PUBLIC');
+  });
+
+  it.each(['REJECTED', 'CANCELLED'])(
+    'donationAllowed is false and donation is blocked for a %s campaign',
+    async (status) => {
+      const { app } = buildApp();
+      await forceCampaignStatus(app, PUBLIC_CAMPAIGN_ID, status);
+
+      const nonOwnerRead = await request(app)
+        .get(`/api/v1/fundraising/campaigns/${PUBLIC_CAMPAIGN_ID}`)
+        .set('Authorization', 'Bearer non-owner');
+      expect(nonOwnerRead.status).toBe(403);
+      expect(nonOwnerRead.body.error.code).toBe('FUNDRAISER_NOT_PUBLIC');
+
+      const donate = await request(app)
+        .post(`/api/v1/fundraising/campaigns/${PUBLIC_CAMPAIGN_ID}/donate`)
+        .set('Authorization', 'Bearer non-owner')
+        .set('Idempotency-Key', `donate-${status}-1`)
+        .send({
+          amount: '5000',
+          currencyCode: 'BDT',
+          returnUrl: 'https://app.example/return',
+          cancelUrl: 'https://app.example/cancel',
+          consentAccepted: true,
+        });
+      expect(donate.status).toBe(403);
+      expect(donate.body.error.code).toBe('FUNDRAISER_NOT_PUBLIC');
+    },
+  );
+
+  it('an EXPIRED campaign stays publicly visible (donationAllowed: false) but blocks new donations', async () => {
+    const { app } = buildApp();
+    await forceCampaignStatus(app, PUBLIC_CAMPAIGN_ID, 'EXPIRED');
+
+    const read = await request(app).get(`/api/v1/fundraising/campaigns/${PUBLIC_CAMPAIGN_ID}`);
+    expect(read.status).toBe(200);
+    expect(read.body.data.donationAllowed).toBe(false);
+    expect(read.body.data.acceptingDonations).toBe(false);
+    expect(read.body.data.canDonate).toBe(false);
+
+    const donate = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${PUBLIC_CAMPAIGN_ID}/donate`)
+      .set('Authorization', 'Bearer non-owner')
+      .set('Idempotency-Key', 'donate-expired-1')
+      .send({
+        amount: '5000',
+        currencyCode: 'BDT',
+        returnUrl: 'https://app.example/return',
+        cancelUrl: 'https://app.example/cancel',
+        consentAccepted: true,
+      });
+    expect(donate.status).toBe(422);
+    expect(donate.body.error.code).toBe('FUNDRAISER_NOT_DONATABLE');
+  });
+
+  it('an ACTIVE, donatable campaign reports donationAllowed: true in both feed and detail', async () => {
+    const { app } = buildApp();
+
+    const detail = await request(app).get(`/api/v1/fundraising/campaigns/${PUBLIC_CAMPAIGN_ID}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.donationAllowed).toBe(true);
+
+    const feed = await request(app).get('/api/v1/fundraising/feed');
+    expect(feed.status).toBe(200);
+    const item = (feed.body.data.items as Array<{ id: number; donationAllowed: boolean }>).find(
+      (c) => c.id === PUBLIC_CAMPAIGN_ID,
+    );
+    expect(item?.donationAllowed).toBe(true);
   });
 });

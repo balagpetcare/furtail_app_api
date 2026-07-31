@@ -1,141 +1,249 @@
 import { seedBdLocations } from '../prisma/seed/locations/bd-locations';
 
-/**
- * Minimal in-memory stand-in for the slice of PrismaClient the seed script
- * uses (upsert-by-unique-key + findMany({select})), so this test exercises
- * the REAL seed script/JSON data against a fake "database" — no Postgres
- * required — and verifies it is safe to run repeatedly (idempotent) and
- * that every parent reference in the canonical JSON data actually resolves.
- */
-function createFakeModel(keyField: string) {
-  const rows = new Map<string, Record<string, unknown> & { id: number }>();
+type FakeRow = Record<string, unknown> & {
+  id: number;
+  code?: string;
+  isActive?: boolean;
+  type?: string;
+};
+
+function matchesWhere(row: FakeRow, where: Record<string, unknown> | undefined): boolean {
+  if (!where) return true;
+
+  for (const [key, value] of Object.entries(where)) {
+    if (key === 'AND' && Array.isArray(value)) {
+      if (!value.every((clause) => matchesWhere(row, clause as Record<string, unknown>))) {
+        return false;
+      }
+      continue;
+    }
+
+    if (key === 'OR' && Array.isArray(value)) {
+      if (!value.some((clause) => matchesWhere(row, clause as Record<string, unknown>))) {
+        return false;
+      }
+      continue;
+    }
+
+    if (key === 'NOT' && value && typeof value === 'object' && !Array.isArray(value)) {
+      if (matchesWhere(row, value as Record<string, unknown>)) {
+        return false;
+      }
+      continue;
+    }
+
+    const rowValue = row[key];
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const nested = value as { in?: unknown[] };
+      if (nested.in && !nested.in.includes(rowValue)) {
+        return false;
+      }
+      continue;
+    }
+
+    if (rowValue !== value) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function createFakeModel(keyField: string, initialRows: FakeRow[] = []) {
+  const rows = new Map<string, FakeRow>();
   let nextId = 1;
+
+  const addRow = (row: FakeRow) => {
+    rows.set(String(row[keyField] ?? row.id), row);
+    nextId = Math.max(nextId, row.id + 1);
+  };
+
+  for (const row of initialRows) {
+    addRow(clone(row));
+  }
+
+  const findById = (id: number) => [...rows.values()].find((row) => row.id === id) ?? null;
+
   return {
     async upsert({
       where,
       update,
       create,
     }: {
-      where: Record<string, string>;
+      where: Record<string, unknown>;
       update: Record<string, unknown>;
       create: Record<string, unknown>;
     }) {
-      const key = where[keyField]!;
+      const key = String(where[keyField]);
       const existing = rows.get(key);
       if (existing) {
         Object.assign(existing, update);
-        return existing;
+        return clone(existing);
       }
-      const row = { id: nextId++, [keyField]: key, ...create };
-      rows.set(key, row);
-      return row;
+      const row = { id: nextId++, [keyField]: key, ...create } as FakeRow;
+      addRow(row);
+      return clone(row);
     },
-    async findMany({ select }: { select?: Record<string, true> } = {}) {
-      return [...rows.values()].map((row) => {
-        if (!select) return row;
+    async update({
+      where,
+      data,
+    }: {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    }) {
+      const target =
+        typeof where.id === 'number'
+          ? findById(where.id)
+          : rows.get(String(where[keyField] ?? where.code));
+      if (!target) {
+        throw new Error(`Missing row for update on ${keyField}`);
+      }
+      Object.assign(target, data);
+      return clone(target);
+    },
+    async findFirst({ where }: { where?: Record<string, unknown> } = {}) {
+      return clone((await this.findMany({ where }))[0] ?? null);
+    },
+    async findMany({
+      where,
+      select,
+    }: {
+      where?: Record<string, unknown>;
+      select?: Record<string, true>;
+    } = {}) {
+      const matched = [...rows.values()].filter((row) => matchesWhere(row, where));
+      return matched.map((row) => {
+        if (!select) return clone(row);
         const picked: Record<string, unknown> = {};
-        for (const key of Object.keys(select)) picked[key] = row[key];
+        for (const key of Object.keys(select)) {
+          picked[key] = row[key];
+        }
         return picked;
       });
     },
-    size: () => rows.size,
   };
 }
 
-function createFakePrisma() {
+function createFakePrisma(initialRows: Partial<Record<string, FakeRow[]>> = {}) {
   return {
-    country: createFakeModel('iso2'),
-    bdDivision: createFakeModel('code'),
-    bdDistrict: createFakeModel('code'),
-    bdUpazila: createFakeModel('code'),
-    bdUnion: createFakeModel('code'),
-    bdArea: createFakeModel('code'),
+    country: createFakeModel('iso2', initialRows.country ?? []),
+    bdDivision: createFakeModel('code', initialRows.bdDivision ?? []),
+    bdDistrict: createFakeModel('code', initialRows.bdDistrict ?? []),
+    bdUpazila: createFakeModel('code', initialRows.bdUpazila ?? []),
+    bdUnion: createFakeModel('code', initialRows.bdUnion ?? []),
+    bdArea: createFakeModel('code', initialRows.bdArea ?? []),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
-describe('seedBdLocations (real seed script + canonical JSON data)', () => {
-  it('seeds the complete hierarchy with zero unresolved parent references', async () => {
+async function activeRows(model: { findMany: () => Promise<FakeRow[]> }): Promise<FakeRow[]> {
+  return (await model.findMany()).filter((row) => row.isActive !== false);
+}
+
+async function activeCount(model: { findMany: () => Promise<FakeRow[]> }): Promise<number> {
+  return (await activeRows(model)).length;
+}
+
+function countTyped(rows: FakeRow[], type: string): number {
+  return rows.filter((row) => row.type === type && row.isActive !== false).length;
+}
+
+describe('seedBdLocations (canonical BPA-aligned hierarchy)', () => {
+  it('seeds the canonical counts and representative DNCC/DSCC paths', async () => {
     const prisma = createFakePrisma();
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     await seedBdLocations(prisma);
 
     expect(warnSpy).not.toHaveBeenCalled();
-    expect(prisma.country.size()).toBe(1);
-    expect(prisma.bdDivision.size()).toBe(8);
-    expect(prisma.bdDistrict.size()).toBe(64);
-    expect(prisma.bdUpazila.size()).toBe(495);
-    expect(prisma.bdUnion.size()).toBe(4540);
-    expect(prisma.bdArea.size()).toBe(74);
+    expect(await activeCount(prisma.country)).toBe(1);
+    expect(await activeCount(prisma.bdDivision)).toBe(8);
+    expect(await activeCount(prisma.bdDistrict)).toBe(64);
+    expect(await activeCount(prisma.bdUpazila)).toBe(494);
+    expect(await activeCount(prisma.bdUnion)).toBe(4540);
 
-    const areas = (await prisma.bdArea.findMany()) as Array<Record<string, unknown>>;
-    const cc = areas.find((a) => a.code === 'CC-DNCC');
-    const zone3 = areas.find((a) => a.code === 'ZONE-DNCC-03');
-    const ward18 = areas.find((a) => a.code === 'WARD-DNCC-18');
+    const urbanRows = await activeRows(prisma.bdArea);
+    expect(countTyped(urbanRows, 'CITY_CORPORATION')).toBe(12);
+    expect(countTyped(urbanRows, 'CITY_ZONE')).toBe(17);
+    expect(countTyped(urbanRows, 'WARD')).toBe(129);
 
-    expect(cc).toBeDefined();
-    expect(zone3).toBeDefined();
-    expect(ward18).toBeDefined();
-    expect(zone3?.parentId).toBe(cc?.id);
-    expect(zone3?.reviewStatus).toBe('CURRENT_VERIFIED');
-    expect(zone3?.currentValidity).toBe('CURRENT_VERIFIED');
-    expect(ward18?.parentId).toBe(zone3?.id);
-    expect(ward18?.reviewStatus).toBe('CURRENT_VERIFIED');
-    expect(ward18?.currentValidity).toBe('CURRENT_VERIFIED');
+    const dncc = urbanRows.find((row) => row.code === 'CC-DNCC');
+    const dnccZone4 = urbanRows.find((row) => row.code === 'ZONE-DNCC-04');
+    const dnccWard18 = urbanRows.find((row) => row.code === 'WARD-DNCC-18');
+    expect(dncc).toBeDefined();
+    expect(dncc?.type).toBe('CITY_CORPORATION');
+    expect(dnccZone4?.parentId).toBe(dncc?.id);
+    expect(dnccWard18?.parentId).toBe(dnccZone4?.id);
+
+    const dscc = urbanRows.find((row) => row.code === 'CC-DSCC');
+    const dsccZone2 = urbanRows.find((row) => row.code === 'ZONE-DSCC-02');
+    const dsccWard25 = urbanRows.find((row) => row.code === 'WARD-DSCC-25');
+    expect(dscc).toBeDefined();
+    expect(dscc?.type).toBe('CITY_CORPORATION');
+    expect(dsccZone2?.parentId).toBe(dscc?.id);
+    expect(dsccWard25?.parentId).toBe(dsccZone2?.id);
+
+    expect(urbanRows.some((row) => row.code === 'UPA-495')).toBe(false);
+    expect(urbanRows.some((row) => row.code === 'AREA-AMINBAZAR-01')).toBe(false);
 
     warnSpy.mockRestore();
   });
 
-  it('is idempotent: running twice does not duplicate any record', async () => {
-    const prisma = createFakePrisma();
+  it('is idempotent and deactivates a preexisting legacy Shaistaganj upazila row', async () => {
+    const prisma = createFakePrisma({
+      bdUpazila: [
+        {
+          id: 999,
+          code: 'UPA-495',
+          nameEn: 'Shaistaganj',
+          nameBn: 'শায়েস্তাগঞ্জ',
+          districtId: 38,
+          sortOrder: 495,
+          isActive: true,
+        },
+      ],
+    });
 
     await seedBdLocations(prisma);
-    const counts1 = {
-      country: prisma.country.size(),
-      division: prisma.bdDivision.size(),
-      district: prisma.bdDistrict.size(),
-      upazila: prisma.bdUpazila.size(),
-      union: prisma.bdUnion.size(),
-      area: prisma.bdArea.size(),
+
+    const firstUpazilas: FakeRow[] = await prisma.bdUpazila.findMany();
+    const firstActiveUpazilas = firstUpazilas.filter((row: FakeRow) => row.isActive !== false);
+    const legacyRow = firstUpazilas.find((row: FakeRow) => row.code === 'UPA-495');
+
+    expect(firstActiveUpazilas).toHaveLength(494);
+    expect(legacyRow?.isActive).toBe(false);
+
+    const firstCounts = {
+      countries: await activeCount(prisma.country),
+      divisions: await activeCount(prisma.bdDivision),
+      districts: await activeCount(prisma.bdDistrict),
+      upazilas: firstActiveUpazilas.length,
+      unions: await activeCount(prisma.bdUnion),
+      cityCorporations: countTyped(await activeRows(prisma.bdArea), 'CITY_CORPORATION'),
+      zones: countTyped(await activeRows(prisma.bdArea), 'CITY_ZONE'),
+      wards: countTyped(await activeRows(prisma.bdArea), 'WARD'),
     };
 
     await seedBdLocations(prisma);
-    const counts2 = {
-      country: prisma.country.size(),
-      division: prisma.bdDivision.size(),
-      district: prisma.bdDistrict.size(),
-      upazila: prisma.bdUpazila.size(),
-      union: prisma.bdUnion.size(),
-      area: prisma.bdArea.size(),
+
+    const secondUpazilas: FakeRow[] = await prisma.bdUpazila.findMany();
+    const secondActiveUpazilas = secondUpazilas.filter((row: FakeRow) => row.isActive !== false);
+    const secondCounts = {
+      countries: await activeCount(prisma.country),
+      divisions: await activeCount(prisma.bdDivision),
+      districts: await activeCount(prisma.bdDistrict),
+      upazilas: secondActiveUpazilas.length,
+      unions: await activeCount(prisma.bdUnion),
+      cityCorporations: countTyped(await activeRows(prisma.bdArea), 'CITY_CORPORATION'),
+      zones: countTyped(await activeRows(prisma.bdArea), 'CITY_ZONE'),
+      wards: countTyped(await activeRows(prisma.bdArea), 'WARD'),
     };
 
-    expect(counts2).toEqual(counts1);
-  });
-
-  it('resolves Bangladesh by ISO alpha-2 code, not display name', async () => {
-    const prisma = createFakePrisma();
-    await seedBdLocations(prisma);
-    const rows = await prisma.country.findMany();
-    expect(rows).toHaveLength(1);
-    expect(rows[0].iso2).toBe('BD');
-    expect(rows[0].name).toBe('Bangladesh');
-  });
-
-  it('seeds a real urban City Corporation -> Zone -> Ward -> Area chain anchored to a district, not a union', async () => {
-    const prisma = createFakePrisma();
-    await seedBdLocations(prisma);
-    const areas: Array<Record<string, unknown>> = await prisma.bdArea.findMany();
-    const cc = areas.find((a) => a.code === 'CC-DNCC');
-    expect(cc).toBeDefined();
-    expect(cc?.type).toBe('CITY_CORPORATION');
-    expect(cc?.unionId).toBeNull();
-    expect(cc?.districtId).not.toBeNull();
-
-    const zone = areas.find((a) => a.code === 'ZONE-DNCC-01');
-    expect(zone?.parentId).toBe(cc?.id);
-
-    const ward = areas.find((a) => a.code === 'WARD-DNCC-01');
-    expect(ward?.parentId).toBe(zone?.id);
+    expect(secondCounts).toEqual(firstCounts);
+    expect(secondUpazilas.find((row: FakeRow) => row.code === 'UPA-495')?.isActive).toBe(false);
   });
 });

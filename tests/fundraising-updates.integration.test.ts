@@ -69,6 +69,10 @@ async function cleanupFundraisingRows(): Promise<void> {
   const prisma = getTestPrisma();
   await prisma.fundraisingCampaignUpdate.deleteMany({});
   await prisma.fundraisingCampaignMedia.deleteMany({ where: { campaignId: { gt: 1 } } });
+  // Donations FK-reference campaigns — must be cleared first, or a
+  // donation left over from a concurrently/previously run fundraising
+  // test suite blocks this cleanup with a foreign key violation.
+  await prisma.fundraisingDonation.deleteMany({ where: { campaignId: { gt: 1 } } });
   await prisma.fundraisingCampaign.deleteMany({ where: { id: { gt: 1 } } });
   await prisma.fundraisingCampaignDraft.deleteMany({ where: { id: { gt: 1 } } });
 }

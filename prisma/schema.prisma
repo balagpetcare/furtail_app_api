@@ -863,9 +863,14 @@ model FundraisingCampaignDraft {
   stateId               Int?
   cityId                Int?
   subDistrictId         Int?
+  bdAddressMode         String?
   bdDivisionId          Int?
   bdDistrictId          Int?
+  bdCityCorporationId   Int?
+  bdZoneId              Int?
+  bdWardId              Int?
   bdUpazilaId           Int?
+  bdUnionId             Int?
   bdAreaId              Int?
   mediaIds              Int[]
   submittedAt           DateTime?
@@ -925,9 +930,14 @@ model FundraisingCampaign {
   stateId                    Int?
   cityId                     Int?
   subDistrictId              Int?
+  bdAddressMode              String?
   bdDivisionId               Int?
   bdDistrictId               Int?
+  bdCityCorporationId        Int?
+  bdZoneId                   Int?
+  bdWardId                   Int?
   bdUpazilaId                Int?
+  bdUnionId                  Int?
   bdAreaId                   Int?
   /// Optimistic-concurrency token — see FundraisingVerificationAccount for
   /// the same pattern (updateMany({where:{id,version}}), count 0 = conflict).

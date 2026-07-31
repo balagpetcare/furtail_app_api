@@ -6,12 +6,27 @@ import type { AuthenticatedPrincipal } from '../../security/principal';
 import { hasPermission, hasRole } from '../../security/authorization';
 import { getPrisma } from '../../infrastructure/db/prisma-client';
 import { encryptKycField, decryptKycField, looksLikeKycEnvelope } from './kyc-encryption';
+import {
+  canWithdrawFunds,
+  isPublicVisibleStatus,
+  isDonationAllowed,
+  isDonationEligibleStatus,
+  isCampaignExpired,
+} from './fundraising-policy';
+import {
+  resolvePaymentRedirect,
+  PaymentProviderUnavailableError,
+  type ResolvedPaymentRedirect,
+} from './payment-provider';
+import { epsCheckTransactionStatus, type EpsTransactionOutcome } from './eps-client';
 
 export type FundraisingAccountStatus = 'DRAFT' | 'PENDING' | 'VERIFIED' | 'REJECTED';
-export type FundraisingFundingMode = 'ONE_TIME' | 'RECURRING';
+export type FundraisingFundingMode = 'ONE_TIME' | 'ONGOING' | 'RECURRING';
 export type FundraisingCampaignStatus =
   | 'DRAFT'
   | 'PENDING_REVIEW'
+  | 'APPROVED'
+  | 'PUBLISHED'
   | 'ACTIVE'
   | 'PAUSED'
   | 'FUNDED'
@@ -20,7 +35,8 @@ export type FundraisingCampaignStatus =
   | 'CANCELLED'
   | 'REJECTED'
   | 'ARCHIVED'
-  | 'SUSPENDED';
+  | 'SUSPENDED'
+  | 'DELETED';
 export type FundraisingDonationStatus =
   'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'EXPIRED' | 'ON_HOLD_REVIEW';
 
@@ -35,6 +51,11 @@ export class FundraisingContractError extends Error {
     | 'VALIDATION'
     | 'NOT_FOUND'
     | 'FORBIDDEN'
+    | 'MEDIA_NOT_OWNED'
+    | 'MEDIA_BINDING_CONFLICT'
+    | 'UPLOAD_INCOMPLETE'
+    | 'INVALID_DRAFT_STATE'
+    | 'RETRYABLE_UPLOAD_FAILURE'
     | 'CONFLICT'
     | 'UNAVAILABLE'
     | 'BAD_SIGNATURE'
@@ -42,7 +63,9 @@ export class FundraisingContractError extends Error {
     | 'ACCESS_DENIED'
     | 'NOT_PUBLIC'
     | 'EDIT_FORBIDDEN'
-    | 'NOT_DONATABLE';
+    | 'NOT_DONATABLE'
+    | 'ACCOUNT_NOT_VERIFIED'
+    | 'PAYMENT_PROVIDER_UNAVAILABLE';
 
   readonly statusCode: number;
 
@@ -51,6 +74,11 @@ export class FundraisingContractError extends Error {
       | 'VALIDATION'
       | 'NOT_FOUND'
       | 'FORBIDDEN'
+      | 'MEDIA_NOT_OWNED'
+      | 'MEDIA_BINDING_CONFLICT'
+      | 'UPLOAD_INCOMPLETE'
+      | 'INVALID_DRAFT_STATE'
+      | 'RETRYABLE_UPLOAD_FAILURE'
       | 'CONFLICT'
       | 'UNAVAILABLE'
       | 'BAD_SIGNATURE'
@@ -58,7 +86,9 @@ export class FundraisingContractError extends Error {
       | 'ACCESS_DENIED'
       | 'NOT_PUBLIC'
       | 'EDIT_FORBIDDEN'
-      | 'NOT_DONATABLE',
+      | 'NOT_DONATABLE'
+      | 'ACCOUNT_NOT_VERIFIED'
+      | 'PAYMENT_PROVIDER_UNAVAILABLE',
     message: string,
     statusCode: number,
   ) {
@@ -72,8 +102,11 @@ export class FundraisingContractError extends Error {
 interface MediaRef {
   id: number;
   url: string;
+  thumbnailUrl: string | null;
+  hlsUrl: string | null;
   mimetype: string;
   type: string;
+  status: 'READY' | 'PROCESSING' | 'FAILED';
 }
 
 interface FundraisingAccountDocumentRecord {
@@ -185,7 +218,7 @@ interface CampaignDraftRecord {
   id: number;
   publicId: string;
   ownerUserId: number;
-  status: 'DRAFT' | 'SUBMITTED' | 'ARCHIVED';
+  status: 'DRAFT' | 'SUBMITTED' | 'PENDING_REVIEW' | 'ARCHIVED';
   title: string | null;
   caption: string | null;
   category: string | null;
@@ -209,9 +242,14 @@ interface CampaignDraftRecord {
   stateId: number | null;
   cityId: number | null;
   subDistrictId: number | null;
+  bdAddressMode: string | null;
   bdDivisionId: number | null;
   bdDistrictId: number | null;
+  bdCityCorporationId: number | null;
+  bdZoneId: number | null;
+  bdWardId: number | null;
   bdUpazilaId: number | null;
+  bdUnionId: number | null;
   bdAreaId: number | null;
   mediaIds: number[];
   submittedAt: Date | null;
@@ -256,9 +294,14 @@ interface CampaignRecord {
   stateId: number | null;
   cityId: number | null;
   subDistrictId: number | null;
+  bdAddressMode: string | null;
   bdDivisionId: number | null;
   bdDistrictId: number | null;
+  bdCityCorporationId: number | null;
+  bdZoneId: number | null;
+  bdWardId: number | null;
   bdUpazilaId: number | null;
+  bdUnionId: number | null;
   bdAreaId: number | null;
   mediaIds: number[];
   createdAt: Date;
@@ -437,9 +480,14 @@ interface FundraisingCampaignDbRecord {
   stateId: number | null;
   cityId: number | null;
   subDistrictId: number | null;
+  bdAddressMode: string | null;
   bdDivisionId: number | null;
   bdDistrictId: number | null;
+  bdCityCorporationId: number | null;
+  bdZoneId: number | null;
+  bdWardId: number | null;
   bdUpazilaId: number | null;
+  bdUnionId: number | null;
   bdAreaId: number | null;
   deletedAt: Date | null;
   createdAt: Date;
@@ -480,9 +528,14 @@ interface FundraisingCampaignDraftDbRecord {
   stateId: number | null;
   cityId: number | null;
   subDistrictId: number | null;
+  bdAddressMode: string | null;
   bdDivisionId: number | null;
   bdDistrictId: number | null;
+  bdCityCorporationId: number | null;
+  bdZoneId: number | null;
+  bdWardId: number | null;
   bdUpazilaId: number | null;
+  bdUnionId: number | null;
   bdAreaId: number | null;
   mediaIds: number[];
   submittedAt: Date | null;
@@ -538,9 +591,14 @@ export interface FundraisingDraftInput {
   stateId?: number | string | null;
   cityId?: number | string | null;
   subDistrictId?: number | string | null;
+  bdAddressMode?: string | null;
   bdDivisionId?: number | string | null;
   bdDistrictId?: number | string | null;
+  bdCityCorporationId?: number | string | null;
+  bdZoneId?: number | string | null;
+  bdWardId?: number | string | null;
   bdUpazilaId?: number | string | null;
+  bdUnionId?: number | string | null;
   bdAreaId?: number | string | null;
   mediaIds?: Array<number | string>;
 }
@@ -558,6 +616,16 @@ export interface DonationCheckoutInput {
   isAnonymous?: boolean;
   consentAccepted?: boolean;
   paymentMethodLabel?: string;
+  /** Best-effort donor contact details for redirect-provider checkout
+   * (e.g. EPS requires a name/email/phone/address on session creation).
+   * Never required — safe placeholders are used when absent. */
+  donorName?: string;
+  donorEmail?: string;
+  donorPhone?: string;
+  donorAddress?: string;
+  donorCity?: string;
+  /** The caller's request IP, forwarded for the provider's fraud checks. */
+  ipAddress?: string;
 }
 
 export interface WebhookInput {
@@ -697,7 +765,11 @@ export class FundraisingStore {
       (document) => document.deletedAt === null && document.mediaId === input.mediaId,
     );
     if (existing) {
-      throw new FundraisingContractError('CONFLICT', 'Document already attached', 409);
+      throw new FundraisingContractError(
+        'MEDIA_BINDING_CONFLICT',
+        'Document already attached',
+        409,
+      );
     }
     const persistedAccount = await this.prisma.fundraisingVerificationAccount.upsert({
       where: { ownerUserId: userId },
@@ -774,18 +846,11 @@ export class FundraisingStore {
         if (existingDraft) return this.draftPayload(existingDraft);
       }
     }
-    const draft = this.transaction((state) => {
-      const created = this.createDraftRecord(state, userId, input);
-      if (key) state.draftIdempotencyKeys.set(this.draftKey(userId, key), created.id);
-      return created;
-    });
+    const draft = this.transaction((state) => this.createDraftRecord(state, userId, input));
     await this.prisma.$transaction(async (tx) => {
-      await tx.fundraisingCampaignDraft.upsert({
-        where: { id: draft.id },
-        create: this.draftRowData(draft),
-        update: this.draftRowData(draft),
-      });
+      await this.createDraftRow(tx, this.state, draft);
       if (key) {
+        this.state.draftIdempotencyKeys.set(this.draftKey(userId, key), draft.id);
         await tx.fundraisingIdempotencyKey.upsert({
           where: {
             scope_ownerUserId_key: {
@@ -862,15 +927,16 @@ export class FundraisingStore {
     }
 
     const draft = await this.mustOwnDraftRecord(userId, draftId);
-    const account = await this.loadVerificationAccountRecord(userId);
-    if (!account)
-      throw new FundraisingContractError('NOT_FOUND', 'Fundraising account not found', 404);
-    const readiness = this.accountReadinessPayload(account);
-    if (!readiness.canStartFundraiser) {
-      throw new FundraisingContractError('VALIDATION', 'Fundraising account is not ready', 422);
+    const alreadySubmittedCampaign = await this.loadCampaignByDraftId(draft.id);
+    if (draft.status === 'PENDING_REVIEW' && alreadySubmittedCampaign) {
+      return this.draftPayload(draft, alreadySubmittedCampaign);
     }
+    // Deliberately NOT gated on verification status, nor on a verification
+    // account row existing at all — see `canCreateOrSubmitCampaign`.
+    // Submitting for review only requires an authenticated owner and a
+    // complete draft; KYC/payout state is enforced at withdrawal instead.
     this.validateDraftForPublishing(draft);
-    draft.status = 'SUBMITTED';
+    draft.status = 'PENDING_REVIEW';
     draft.submittedAt = this.now();
     draft.updatedAt = this.now();
     const campaign = this.createCampaignFromDraft(this.state, draft, {
@@ -882,11 +948,7 @@ export class FundraisingStore {
         where: { id: draft.id },
         data: this.draftRowData(draft),
       });
-      await tx.fundraisingCampaign.upsert({
-        where: { id: campaign.id },
-        create: this.campaignRowData(campaign),
-        update: this.campaignRowData(campaign) as Prisma.FundraisingCampaignUncheckedUpdateInput,
-      });
+      await this.createCampaignRow(tx, campaign);
       await this.persistCampaignMedia(tx, campaign);
       if (key) {
         await tx.fundraisingIdempotencyKey.upsert({
@@ -922,44 +984,34 @@ export class FundraisingStore {
     input: FundraisingCampaignInput,
   ): Promise<Record<string, unknown>> {
     await this.seedReady;
-    const account = await this.loadVerificationAccountRecord(userId);
-    if (!account)
-      throw new FundraisingContractError('NOT_FOUND', 'Fundraising account not found', 404);
-    const readiness = this.accountReadinessPayload(account);
-    if (!readiness.canStartFundraiser) {
-      throw new FundraisingContractError('VALIDATION', 'Fundraising account is not ready', 422);
-    }
+    // Not gated on verification status or on a verification account row
+    // existing — see `canCreateOrSubmitCampaign`.
     const draft = this.transaction((state) => {
       const created = this.createDraftRecord(state, userId, input);
-      created.status = 'SUBMITTED';
+      created.status = 'PENDING_REVIEW';
       created.submittedAt = this.now();
       created.updatedAt = this.now();
       return created;
     });
     this.validateDraftForPublishing(draft);
-    const campaign = this.createCampaignFromDraft(this.state, draft, {
-      status: 'PENDING_REVIEW',
-      publishedAt: null,
-    });
+    let campaign: CampaignRecord | undefined;
     await this.prisma.$transaction(async (tx) => {
-      await tx.fundraisingCampaignDraft.upsert({
-        where: { id: draft.id },
-        create: this.draftRowData(draft),
-        update: this.draftRowData(draft),
+      await this.createDraftRow(tx, this.state, draft);
+      // Built only after the draft's real id is known, so `campaign.draftId`
+      // never carries the pre-persist, potentially-stale temp id.
+      campaign = this.createCampaignFromDraft(this.state, draft, {
+        status: 'PENDING_REVIEW',
+        publishedAt: null,
       });
-      await tx.fundraisingCampaign.upsert({
-        where: { id: campaign.id },
-        create: this.campaignRowData(campaign),
-        update: this.campaignRowData(campaign) as Prisma.FundraisingCampaignUncheckedUpdateInput,
-      });
+      await this.createCampaignRow(tx, campaign);
       await this.persistCampaignMedia(tx, campaign);
     });
     this.transaction((state) => {
       this.syncDraftCacheFromSnapshot(state, draft);
-      this.syncCampaignCacheFromSnapshot(state, campaign);
+      this.syncCampaignCacheFromSnapshot(state, campaign!);
       return undefined;
     });
-    return this.campaignPayload(campaign, userId);
+    return this.campaignPayload(campaign!, userId);
   }
 
   async updateCampaign(
@@ -1127,7 +1179,9 @@ export class FundraisingStore {
     const campaigns = [];
     for (const row of rows) {
       const campaign = this.campaignRecordFromDb(
-        row as FundraisingCampaignDbRecord & { media?: FundraisingCampaignMediaDbRecord[] },
+        row as unknown as FundraisingCampaignDbRecord & {
+          media?: FundraisingCampaignMediaDbRecord[];
+        },
       );
       const account = await this.loadVerificationAccountRecord(campaign.ownerUserId);
       if (account) {
@@ -1168,7 +1222,9 @@ export class FundraisingStore {
     });
     const campaigns = rows.map((row) =>
       this.campaignRecordFromDb(
-        row as FundraisingCampaignDbRecord & { media?: FundraisingCampaignMediaDbRecord[] },
+        row as unknown as FundraisingCampaignDbRecord & {
+          media?: FundraisingCampaignMediaDbRecord[];
+        },
       ),
     );
     return campaigns.map((campaign) => this.campaignPayload(campaign, userId));
@@ -1389,11 +1445,38 @@ export class FundraisingStore {
         amountMinor: amountMinor.toString(),
         currencyCode: resolvedCurrency,
       });
+      const referenceId = `ref_${campaignId}_${Date.now()}_${randomUUID()}`;
+      // Resolved BEFORE any row is written — a misconfigured/unavailable
+      // provider must fail the whole checkout attempt, never leave a
+      // stray donation/payment-attempt row with a made-up redirect URL.
+      // `referenceId` doubles as the EPS merchantTransactionId so the
+      // donation row we're about to create and the session EPS just
+      // opened always resolve to the same reconciliation key.
+      let redirect: ResolvedPaymentRedirect;
+      try {
+        redirect = await resolvePaymentRedirect({
+          merchantTransactionId: referenceId,
+          customerOrderId: referenceId,
+          totalAmount: Number(amountMinor) / 100,
+          customerName: normalizeText(input.donorName) ?? 'Furtail Donor',
+          customerEmail: normalizeText(input.donorEmail) ?? 'donor@furtail.app',
+          customerPhone: normalizeText(input.donorPhone) ?? '01700000000',
+          customerAddress:
+            normalizeText(input.donorAddress) ?? campaignRecord.locationText ?? 'Dhaka',
+          customerCity: normalizeText(input.donorCity) ?? 'Dhaka',
+          ipAddress: normalizeText(input.ipAddress) ?? '127.0.0.1',
+        });
+      } catch (error) {
+        if (error instanceof PaymentProviderUnavailableError) {
+          throw new FundraisingContractError('PAYMENT_PROVIDER_UNAVAILABLE', error.message, 503);
+        }
+        throw error;
+      }
       try {
         const donation = await this.prisma.fundraisingDonation.create({
           data: {
             publicId: `intent_${randomUUID()}`,
-            referenceId: `ref_${campaignId}_${Date.now()}_${randomUUID()}`,
+            referenceId,
             campaignId,
             donorUserId: userId,
             status: 'PENDING',
@@ -1413,9 +1496,9 @@ export class FundraisingStore {
           data: {
             attemptId: `attempt_${randomUUID()}`,
             donationId: donation.id,
-            provider: 'wpa',
-            providerPaymentId: null,
-            redirectUrl: returnUrl,
+            provider: redirect.provider,
+            providerPaymentId: redirect.providerPaymentId,
+            redirectUrl: redirect.redirectUrl,
             logId: `log_${randomUUID()}`,
             status: 'PENDING',
             ...(providerMetadata ? { providerMetadata } : {}),
@@ -1557,6 +1640,68 @@ export class FundraisingStore {
     return this.getDonationAttemptByReference(viewerUserId, referenceId);
   }
 
+  /**
+   * EPS has no signed server-to-server webhook push (see eps-client.ts) —
+   * it only redirects the payer's browser to our success/fail/cancel URLs,
+   * carrying no trustworthy payload. This is the one place that redirect is
+   * used for: as a trigger to ask EPS's own status API (x-hash + bearer
+   * authenticated — this call IS the cryptographic verification step) what
+   * actually happened, then apply that verified outcome through the exact
+   * same idempotent, atomic transition `handleWebhook` already uses for
+   * every other provider. The redirect's own query string is never trusted
+   * for the outcome itself — only `referenceId` is read from it, and that
+   * is not privileged (it is DB-idempotency-guarded, not authorization).
+   *
+   * Safe to call repeatedly (button double-taps, retried redirects, a user
+   * reloading the return page): `eventId` is derived from EPS's own
+   * outcome, so re-resolving the same settled outcome is a no-op via the
+   * existing `fundraisingWebhookEvent` dedup, and never re-increments
+   * raised totals or re-creates a receipt.
+   */
+  async reconcileEpsPayment(referenceId: string): Promise<Record<string, unknown>> {
+    await this.seedReady;
+    const snapshot = await this.loadDonationSnapshot(referenceId);
+    if (!snapshot) {
+      throw new FundraisingContractError('NOT_FOUND', 'Donation not found', 404);
+    }
+    const status = await epsCheckTransactionStatus(referenceId);
+    const mappedStatus = mapEpsOutcomeToDonationStatus(status.outcome);
+    const eventId = `eps:${referenceId}:${status.outcome}`;
+    const amountMinor = snapshot.donation.amountMinor;
+    const currencyCode = snapshot.donation.currencyCode;
+    const providerPaymentId = status.epsTransactionId ?? '';
+    // Only safe, non-secret fields — no credentials, tokens, or full raw
+    // provider payloads are ever logged or persisted verbatim.
+    const payload = {
+      outcome: status.outcome,
+      epsTransactionId: status.epsTransactionId,
+      financialEntity: status.financialEntity,
+    };
+    const rawPayload = stablePayloadString(payload);
+    const signature = signWebhookPayload(
+      this.webhookSecret,
+      'eps',
+      eventId,
+      referenceId,
+      mappedStatus,
+      amountMinor,
+      currencyCode,
+      providerPaymentId,
+      rawPayload,
+    );
+    return this.handleWebhook({
+      provider: 'eps',
+      eventId,
+      referenceId,
+      status: mappedStatus,
+      amountMinor,
+      currencyCode,
+      providerPaymentId: providerPaymentId || undefined,
+      signature,
+      payload,
+    });
+  }
+
   async handleWebhook(input: WebhookInput): Promise<Record<string, unknown>> {
     await this.seedReady;
     const rawPayload = stablePayloadString(input.payload);
@@ -1636,7 +1781,7 @@ export class FundraisingStore {
 
       const paymentRow = donationRow.paymentAttempts[0] ?? null;
       const isDonatable = this.canConfirmDonationForCampaign(
-        campaign as FundraisingCampaignDbRecord,
+        campaign as unknown as FundraisingCampaignDbRecord,
       );
       const sanitizedProviderMetadata = this.sanitizeProviderMetadata({
         provider: input.provider,
@@ -1849,7 +1994,9 @@ export class FundraisingStore {
     });
     if (!row) return null;
     const campaign = this.campaignRecordFromDb(
-      row as FundraisingCampaignDbRecord & { media?: FundraisingCampaignMediaDbRecord[] },
+      row as unknown as FundraisingCampaignDbRecord & {
+        media?: FundraisingCampaignMediaDbRecord[];
+      },
     );
     const account = await this.loadVerificationAccountRecord(campaign.ownerUserId);
     if (account) {
@@ -1877,7 +2024,7 @@ export class FundraisingStore {
     });
     if (!row) return null;
     const draft = this.draftRecordFromDb(
-      row as FundraisingCampaignDraftDbRecord & {
+      row as unknown as FundraisingCampaignDraftDbRecord & {
         campaign?:
           (FundraisingCampaignDbRecord & { media?: FundraisingCampaignMediaDbRecord[] }) | null;
       },
@@ -1886,7 +2033,7 @@ export class FundraisingStore {
       this.syncDraftCacheFromSnapshot(state, draft);
       if (row.campaign) {
         const campaign = this.campaignRecordFromDb(
-          row.campaign as FundraisingCampaignDbRecord & {
+          row.campaign as unknown as FundraisingCampaignDbRecord & {
             media?: FundraisingCampaignMediaDbRecord[];
           },
         );
@@ -1909,7 +2056,9 @@ export class FundraisingStore {
     });
     if (!row) return null;
     const campaign = this.campaignRecordFromDb(
-      row as FundraisingCampaignDbRecord & { media?: FundraisingCampaignMediaDbRecord[] },
+      row as unknown as FundraisingCampaignDbRecord & {
+        media?: FundraisingCampaignMediaDbRecord[];
+      },
     );
     this.transaction((state) => {
       this.syncCampaignCacheFromSnapshot(state, campaign);
@@ -1966,9 +2115,14 @@ export class FundraisingStore {
       stateId: row.stateId,
       cityId: row.cityId,
       subDistrictId: row.subDistrictId,
+      bdAddressMode: row.bdAddressMode,
       bdDivisionId: row.bdDivisionId,
       bdDistrictId: row.bdDistrictId,
+      bdCityCorporationId: row.bdCityCorporationId,
+      bdZoneId: row.bdZoneId,
+      bdWardId: row.bdWardId,
       bdUpazilaId: row.bdUpazilaId,
+      bdUnionId: row.bdUnionId,
       bdAreaId: row.bdAreaId,
       mediaIds: (row.media ?? []).map((media) => media.mediaId),
       createdAt: row.createdAt,
@@ -2016,9 +2170,14 @@ export class FundraisingStore {
       stateId: row.stateId,
       cityId: row.cityId,
       subDistrictId: row.subDistrictId,
+      bdAddressMode: row.bdAddressMode,
       bdDivisionId: row.bdDivisionId,
       bdDistrictId: row.bdDistrictId,
+      bdCityCorporationId: row.bdCityCorporationId,
+      bdZoneId: row.bdZoneId,
+      bdWardId: row.bdWardId,
       bdUpazilaId: row.bdUpazilaId,
+      bdUnionId: row.bdUnionId,
       bdAreaId: row.bdAreaId,
       mediaIds: [...row.mediaIds],
       submittedAt: row.submittedAt,
@@ -2051,7 +2210,50 @@ export class FundraisingStore {
     state.nextPostId = Math.max(state.nextPostId, campaign.postId + 1);
   }
 
+  /**
+   * Creates a brand-new campaign row without pinning the in-memory
+   * `nextCampaignId` counter's (potentially stale, post-restart) value as
+   * the primary key — Postgres autoincrement assigns it. `campaign.id` is
+   * updated in place to the real persisted id before any dependent write
+   * (media bindings, idempotency record) references it. Callers must only
+   * use this for a campaign confirmed not to already exist (draft-scoped
+   * uniqueness is enforced by `draftId @unique` regardless).
+   */
+  private async createCampaignRow(
+    tx: PrismaClient | Prisma.TransactionClient,
+    campaign: CampaignRecord,
+  ): Promise<void> {
+    const persisted = await tx.fundraisingCampaign.create({
+      data: this.campaignRowData(campaign),
+    });
+    campaign.id = persisted.id;
+  }
+
   private syncDraftCacheFromSnapshot(state: StoreState, draft: CampaignDraftRecord): void {
+    state.drafts.set(draft.id, draft);
+    state.nextDraftId = Math.max(state.nextDraftId, draft.id + 1);
+  }
+
+  /**
+   * Creates a brand-new draft row without pinning the in-memory
+   * `nextDraftId` counter's (potentially stale, post-restart) value as the
+   * primary key — Postgres autoincrement assigns it. The in-memory record
+   * (and its `state.drafts` map key) is re-keyed to the real persisted id
+   * before anything else references it, so the numeric id returned to the
+   * client always matches the actual row.
+   */
+  private async createDraftRow(
+    tx: PrismaClient | Prisma.TransactionClient,
+    state: StoreState,
+    draft: CampaignDraftRecord,
+  ): Promise<void> {
+    const persisted = await tx.fundraisingCampaignDraft.create({
+      data: this.draftRowData(draft),
+    });
+    if (persisted.id !== draft.id) {
+      state.drafts.delete(draft.id);
+      draft.id = persisted.id;
+    }
     state.drafts.set(draft.id, draft);
     state.nextDraftId = Math.max(state.nextDraftId, draft.id + 1);
   }
@@ -2120,7 +2322,6 @@ export class FundraisingStore {
     account.districtId = parseNumber(input.districtId) ?? account.districtId;
     account.upazilaId = parseNumber(input.upazilaId) ?? account.upazilaId;
     account.unionId = parseNumber(input.unionId) ?? account.unionId;
-    account.areaId = parseNumber(input.areaId) ?? account.areaId;
     account.countryCode = normalizeText(input.countryCode) ?? account.countryCode;
     account.countryName = normalizeText(input.countryName) ?? account.countryName;
     account.stateName = normalizeText(input.stateName) ?? account.stateName;
@@ -2148,8 +2349,7 @@ export class FundraisingStore {
       input.divisionId !== undefined ||
       input.districtId !== undefined ||
       input.upazilaId !== undefined ||
-      input.unionId !== undefined ||
-      input.areaId !== undefined;
+      input.unionId !== undefined;
     const hasInternationalLocationInput =
       input.countryCode !== undefined ||
       input.countryName !== undefined ||
@@ -2162,7 +2362,6 @@ export class FundraisingStore {
       account.districtId = null;
       account.upazilaId = null;
       account.unionId = null;
-      account.areaId = null;
     } else if (hasBangladeshLocationInput) {
       account.countryCode = null;
       account.countryName = null;
@@ -2176,7 +2375,6 @@ export class FundraisingStore {
       account.districtId = null;
       account.upazilaId = null;
       account.unionId = null;
-      account.areaId = null;
       account.isInternational = true;
     }
     return account;
@@ -2361,7 +2559,6 @@ export class FundraisingStore {
     campaign: CampaignRecord,
   ): Prisma.FundraisingCampaignUncheckedCreateInput {
     return {
-      id: campaign.id,
       publicId: campaign.publicId,
       ownerUserId: campaign.ownerUserId,
       draftId: campaign.draftId,
@@ -2399,9 +2596,14 @@ export class FundraisingStore {
       stateId: campaign.stateId,
       cityId: campaign.cityId,
       subDistrictId: campaign.subDistrictId,
+      bdAddressMode: campaign.bdAddressMode,
       bdDivisionId: campaign.bdDivisionId,
       bdDistrictId: campaign.bdDistrictId,
+      bdCityCorporationId: campaign.bdCityCorporationId,
+      bdZoneId: campaign.bdZoneId,
+      bdWardId: campaign.bdWardId,
       bdUpazilaId: campaign.bdUpazilaId,
+      bdUnionId: campaign.bdUnionId,
       bdAreaId: campaign.bdAreaId,
       version: 0,
       deletedAt: campaign.deletedAt,
@@ -2412,7 +2614,6 @@ export class FundraisingStore {
     campaign: CampaignDraftRecord,
   ): Prisma.FundraisingCampaignDraftUncheckedCreateInput {
     return {
-      id: campaign.id,
       publicId: campaign.publicId,
       ownerUserId: campaign.ownerUserId,
       status: campaign.status,
@@ -2441,9 +2642,14 @@ export class FundraisingStore {
       stateId: campaign.stateId,
       cityId: campaign.cityId,
       subDistrictId: campaign.subDistrictId,
+      bdAddressMode: campaign.bdAddressMode,
       bdDivisionId: campaign.bdDivisionId,
       bdDistrictId: campaign.bdDistrictId,
+      bdCityCorporationId: campaign.bdCityCorporationId,
+      bdZoneId: campaign.bdZoneId,
+      bdWardId: campaign.bdWardId,
       bdUpazilaId: campaign.bdUpazilaId,
+      bdUnionId: campaign.bdUnionId,
       bdAreaId: campaign.bdAreaId,
       mediaIds: [...campaign.mediaIds],
       submittedAt: campaign.submittedAt,
@@ -2474,21 +2680,20 @@ export class FundraisingStore {
     campaign: FundraisingCampaignDbRecord | CampaignRecord,
   ): boolean {
     if ('deletedAt' in campaign && campaign.deletedAt !== null) return false;
-    if (
-      !['ACTIVE', 'PENDING_REVIEW'].includes(campaign.status) ||
-      ['CANCELLED', 'REJECTED', 'ARCHIVED', 'EXPIRED'].includes(campaign.status)
-    ) {
-      return false;
-    }
-    const end = campaign.endsAt ?? campaign.deadline;
-    if (end && end.getTime() < this.now().getTime()) return false;
-    const target = campaign.targetAmountMinor;
     const raised =
       'raisedAmountMinor' in campaign
         ? campaign.raisedAmountMinor
         : campaign.stats.raisedAmountMinor;
-    if (target && raised >= target) return false;
-    return true;
+    return isDonationAllowed(
+      {
+        status: campaign.status,
+        endsAt: campaign.endsAt,
+        deadline: campaign.deadline,
+        targetAmountMinor: campaign.targetAmountMinor,
+        raisedAmountMinor: raised,
+      },
+      this.now(),
+    );
   }
 
   private async tryTransitionDonation(
@@ -3011,12 +3216,12 @@ export class FundraisingStore {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.fundraisingVerificationAccount.upsert({
+      const persistedAccount = await tx.fundraisingVerificationAccount.upsert({
         where: { ownerUserId: 1 },
         create: this.verificationAccountCreateData(account),
         update: this.verificationAccountUpdateData(account),
       });
-      await this.persistVerificationDocuments(tx, account);
+      await this.persistVerificationDocuments(tx, account, persistedAccount.id);
       await tx.fundraisingCampaignDraft.upsert({
         where: { id: draft.id },
         create: this.draftRowData(draft),
@@ -3122,11 +3327,12 @@ export class FundraisingStore {
   private async persistVerificationDocuments(
     tx: PrismaClient | Prisma.TransactionClient,
     account: FundraisingAccountRecord,
+    accountId: number = account.id,
   ): Promise<void> {
     for (const document of account.documents) {
       const existing = await tx.fundraisingVerificationDocument.findFirst({
         where: {
-          accountId: account.id,
+          accountId,
           mediaId: document.mediaId,
         },
         orderBy: { id: 'asc' },
@@ -3144,7 +3350,7 @@ export class FundraisingStore {
         await tx.fundraisingVerificationDocument.create({
           data: {
             id: document.id,
-            accountId: account.id,
+            accountId,
             mediaId: document.mediaId,
             title: document.title,
             documentType: document.documentType ?? 'SUPPORTING',
@@ -3258,9 +3464,14 @@ export class FundraisingStore {
       stateId: parseNumber(input.stateId),
       cityId: parseNumber(input.cityId),
       subDistrictId: parseNumber(input.subDistrictId),
+      bdAddressMode: normalizeText(input.bdAddressMode),
       bdDivisionId: parseNumber(input.bdDivisionId),
       bdDistrictId: parseNumber(input.bdDistrictId),
+      bdCityCorporationId: parseNumber(input.bdCityCorporationId),
+      bdZoneId: parseNumber(input.bdZoneId),
+      bdWardId: parseNumber(input.bdWardId),
       bdUpazilaId: parseNumber(input.bdUpazilaId),
+      bdUnionId: parseNumber(input.bdUnionId),
       bdAreaId: parseNumber(input.bdAreaId),
       mediaIds: Array.isArray(input.mediaIds)
         ? input.mediaIds
@@ -3327,9 +3538,14 @@ export class FundraisingStore {
       stateId: draft.stateId,
       cityId: draft.cityId,
       subDistrictId: draft.subDistrictId,
+      bdAddressMode: draft.bdAddressMode,
       bdDivisionId: draft.bdDivisionId,
       bdDistrictId: draft.bdDistrictId,
+      bdCityCorporationId: draft.bdCityCorporationId,
+      bdZoneId: draft.bdZoneId,
+      bdWardId: draft.bdWardId,
       bdUpazilaId: draft.bdUpazilaId,
+      bdUnionId: draft.bdUnionId,
       bdAreaId: draft.bdAreaId,
       mediaIds: [...draft.mediaIds],
       createdAt: this.now(),
@@ -3404,6 +3620,19 @@ export class FundraisingStore {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, 3)
       .map((intent) => this.donorPayload(viewerUserId, intent.donorUserId, intent.amountMinor));
+    // Canonical field is `donationAllowed`; `acceptingDonations`/`canDonate`
+    // are additive aliases the mobile client also understands — all three
+    // must always agree, so they're derived from the same policy call.
+    const donationAllowed = isDonationAllowed(
+      {
+        status: campaign.status,
+        endsAt: campaign.endsAt,
+        deadline: campaign.deadline,
+        targetAmountMinor: campaign.targetAmountMinor,
+        raisedAmountMinor: campaign.stats.raisedAmountMinor,
+      },
+      this.now(),
+    );
     return {
       id: campaign.id,
       publicId: campaign.publicId,
@@ -3420,6 +3649,9 @@ export class FundraisingStore {
       publishedAt: campaign.publishedAt,
       createdAt: campaign.createdAt,
       status: campaign.status,
+      donationAllowed,
+      acceptingDonations: donationAllowed,
+      canDonate: donationAllowed,
       author,
       caption: campaign.caption,
       post,
@@ -3432,6 +3664,15 @@ export class FundraisingStore {
       isAccountVerified: this.isAccountVerified(campaign.ownerUserId),
       category: campaign.category,
       locationText: campaign.locationText ?? '',
+      bdAddressMode: campaign.bdAddressMode,
+      bdDivisionId: campaign.bdDivisionId,
+      bdDistrictId: campaign.bdDistrictId,
+      bdCityCorporationId: campaign.bdCityCorporationId,
+      bdZoneId: campaign.bdZoneId,
+      bdWardId: campaign.bdWardId,
+      bdUpazilaId: campaign.bdUpazilaId,
+      bdUnionId: campaign.bdUnionId,
+      bdAreaId: campaign.bdAreaId,
       last3Donors,
       account: this.accountSummary(campaign.ownerUserId),
     };
@@ -3503,9 +3744,14 @@ export class FundraisingStore {
       stateId: draft.stateId,
       cityId: draft.cityId,
       subDistrictId: draft.subDistrictId,
+      bdAddressMode: draft.bdAddressMode,
       bdDivisionId: draft.bdDivisionId,
       bdDistrictId: draft.bdDistrictId,
+      bdCityCorporationId: draft.bdCityCorporationId,
+      bdZoneId: draft.bdZoneId,
+      bdWardId: draft.bdWardId,
       bdUpazilaId: draft.bdUpazilaId,
+      bdUnionId: draft.bdUnionId,
       bdAreaId: draft.bdAreaId,
       submittedAt: draft.submittedAt,
       mediaIds: [...draft.mediaIds],
@@ -3565,6 +3811,7 @@ export class FundraisingStore {
     return {
       provider: payment.provider,
       providerPaymentId: payment.providerPaymentId,
+      redirectUrl: payment.redirectUrl,
       logId: payment.logId,
       paymentAttemptId: payment.id,
       status: payment.status,
@@ -3734,8 +3981,14 @@ export class FundraisingStore {
     return {
       id: media.id,
       url: media.url,
+      thumbnailUrl: media.thumbnailUrl,
+      hlsUrl: media.hlsUrl,
       type: media.type,
       mimetype: media.mimetype,
+      // Exposed so a draft reopen can tell READY apart from
+      // still-PROCESSING/FAILED media without re-polling every media id
+      // individually.
+      status: media.status,
     };
   }
 
@@ -3745,7 +3998,10 @@ export class FundraisingStore {
     return {
       id: media.id,
       url: media.url,
+      thumbnailUrl: media.thumbnailUrl,
+      hlsUrl: media.hlsUrl,
       mimetype: media.mimetype,
+      status: media.status,
       type:
         media.status === 'READY'
           ? media.mimetype.startsWith('video/')
@@ -3757,7 +4013,7 @@ export class FundraisingStore {
 
   private ensureOwnedMedia(userId: number, mediaId: number): void {
     if (!this.socialStore.isMediaOwnedBy(userId, mediaId)) {
-      throw new FundraisingContractError('FORBIDDEN', 'Media not found', 403);
+      throw new FundraisingContractError('MEDIA_NOT_OWNED', 'Media not found', 403);
     }
   }
 
@@ -3773,7 +4029,7 @@ export class FundraisingStore {
     if (this.socialStore.isBlocked(viewerUserId, campaign.ownerUserId)) {
       throw new FundraisingContractError('FORBIDDEN', 'Campaign not found', 403);
     }
-    if (!['ACTIVE', 'PAUSED', 'FUNDED', 'COMPLETED', 'EXPIRED'].includes(campaign.status)) {
+    if (!isPublicVisibleStatus(campaign.status)) {
       throw new FundraisingContractError('NOT_PUBLIC', 'Campaign not public', 403);
     }
   }
@@ -3787,7 +4043,7 @@ export class FundraisingStore {
     if (isManager || this.hasManageAnyAccess(viewerUserId)) return true;
     if (campaign.ownerUserId === viewerUserId) return true;
     if (this.socialStore.isBlocked(viewerUserId, campaign.ownerUserId)) return false;
-    return ['ACTIVE', 'PAUSED', 'FUNDED', 'COMPLETED', 'EXPIRED'].includes(campaign.status);
+    return isPublicVisibleStatus(campaign.status);
   }
 
   private matchesFeedFilters(
@@ -3833,13 +4089,21 @@ export class FundraisingStore {
     if (!draft.category) missing.push('category');
     if (!draft.beneficiaryType) missing.push('beneficiaryType');
     if (!draft.beneficiaryName) missing.push('beneficiaryName');
-    if (!draft.targetAmountMinor || draft.targetAmountMinor <= 0n)
+    const oneTime = draft.fundingMode === 'ONE_TIME';
+    if (oneTime && (!draft.targetAmountMinor || draft.targetAmountMinor <= 0n))
       missing.push('targetAmountMinor');
+    if (!oneTime && (!draft.monthlyGoalMinor || draft.monthlyGoalMinor <= 0n))
+      missing.push('monthlyGoalMinor');
     const end = draft.endsAt ?? draft.deadline;
-    if (draft.fundingMode === 'ONE_TIME' && !end) missing.push('deadline');
+    if (oneTime && !end) missing.push('deadline');
     for (const mediaId of draft.mediaIds) {
       if (!this.socialStore.isMediaOwnedBy(draft.ownerUserId, mediaId)) {
         missing.push(`mediaIds:${mediaId}`);
+        continue;
+      }
+      const media = this.socialStore.getMedia(mediaId);
+      if (!media || media.status !== 'READY') {
+        missing.push(`mediaIds:${mediaId}:not_ready`);
       }
     }
     if (missing.length > 0) {
@@ -3874,15 +4138,14 @@ export class FundraisingStore {
 
   private ensureCanDonate(userId: number, campaign: CampaignRecord): void {
     this.ensureCanViewCampaign(userId, campaign);
-    if (!['ACTIVE', 'PENDING_REVIEW'].includes(campaign.status)) {
+    if (!isDonationEligibleStatus(campaign.status)) {
       throw new FundraisingContractError(
         'NOT_DONATABLE',
         `This fundraiser is not accepting donations`,
         422,
       );
     }
-    const end = campaign.endsAt ?? campaign.deadline;
-    if (end && end.getTime() < this.now().getTime()) {
+    if (isCampaignExpired(campaign, this.now())) {
       throw new FundraisingContractError('NOT_DONATABLE', 'This fundraiser has expired', 422);
     }
     if (
@@ -4021,6 +4284,29 @@ export class FundraisingStore {
     return account?.status === 'VERIFIED';
   }
 
+  /**
+   * Payout-sensitive guard — the one place fundraising verification is
+   * genuinely load-bearing. Withdrawal / cash-out / payout-execution /
+   * payout-destination-activation routes must call this before moving any
+   * collected funds. Reads the durable row (not the in-memory cache) so a
+   * freshly restarted process can never mistake an unverified account for
+   * a verified one.
+   *
+   * Campaign create/save/submit and donation acceptance deliberately do
+   * NOT call this — see `canCreateOrSubmitCampaign` / `canReceiveDonations`
+   * in `fundraising-policy.ts`.
+   */
+  async assertCanWithdrawFunds(userId: number): Promise<void> {
+    const account = await this.loadVerificationAccountRecord(userId);
+    if (!canWithdrawFunds(account)) {
+      throw new FundraisingContractError(
+        'ACCOUNT_NOT_VERIFIED',
+        'Complete fundraising verification before withdrawing funds',
+        403,
+      );
+    }
+  }
+
   private principalForUser(userId: number): AuthenticatedPrincipal {
     return {
       sub: String(userId),
@@ -4045,9 +4331,15 @@ export class FundraisingStore {
     if (input.currencyCode !== undefined)
       draft.currencyCode = normalizeCurrency(input.currencyCode) ?? draft.currencyCode;
     if (input.targetAmountMinor !== undefined)
-      draft.targetAmountMinor = parseMoneyMinor(input.targetAmountMinor, 'targetAmountMinor');
+      draft.targetAmountMinor =
+        input.targetAmountMinor == null
+          ? null
+          : parseMoneyMinor(input.targetAmountMinor, 'targetAmountMinor');
     if (input.monthlyGoalMinor !== undefined)
-      draft.monthlyGoalMinor = parseMoneyMinor(input.monthlyGoalMinor, 'monthlyGoalMinor');
+      draft.monthlyGoalMinor =
+        input.monthlyGoalMinor == null
+          ? null
+          : parseMoneyMinor(input.monthlyGoalMinor, 'monthlyGoalMinor');
     if (input.startsAt !== undefined) draft.startsAt = parseDate(input.startsAt);
     if (input.endsAt !== undefined) draft.endsAt = parseDate(input.endsAt);
     if (input.deadline !== undefined) draft.deadline = parseDate(input.deadline);
@@ -4074,7 +4366,13 @@ export class FundraisingStore {
     if (input.subDistrictId !== undefined) draft.subDistrictId = parseNumber(input.subDistrictId);
     if (input.bdDivisionId !== undefined) draft.bdDivisionId = parseNumber(input.bdDivisionId);
     if (input.bdDistrictId !== undefined) draft.bdDistrictId = parseNumber(input.bdDistrictId);
+    if (input.bdAddressMode !== undefined) draft.bdAddressMode = normalizeText(input.bdAddressMode);
+    if (input.bdCityCorporationId !== undefined)
+      draft.bdCityCorporationId = parseNumber(input.bdCityCorporationId);
+    if (input.bdZoneId !== undefined) draft.bdZoneId = parseNumber(input.bdZoneId);
+    if (input.bdWardId !== undefined) draft.bdWardId = parseNumber(input.bdWardId);
     if (input.bdUpazilaId !== undefined) draft.bdUpazilaId = parseNumber(input.bdUpazilaId);
+    if (input.bdUnionId !== undefined) draft.bdUnionId = parseNumber(input.bdUnionId);
     if (input.bdAreaId !== undefined) draft.bdAreaId = parseNumber(input.bdAreaId);
     if (Array.isArray(input.mediaIds)) {
       draft.mediaIds = input.mediaIds
@@ -4132,7 +4430,8 @@ function normalizeCurrency(value: unknown): string | null {
 function normalizeFundingMode(value: unknown): FundraisingFundingMode | null {
   const text = normalizeText(value)?.toUpperCase();
   if (!text) return null;
-  return text === 'RECURRING' ? 'RECURRING' : 'ONE_TIME';
+  if (text === 'ONGOING' || text === 'RECURRING') return 'ONGOING';
+  return 'ONE_TIME';
 }
 
 function normalizeAccountType(value: unknown): 'INDIVIDUAL' | 'ORGANIZATION' | null {
@@ -4175,6 +4474,21 @@ function normalizeDonationStatus(raw: string): FundraisingDonationStatus {
     case 'PROCESSING':
     case 'PENDING':
       return normalized;
+    default:
+      return 'PROCESSING';
+  }
+}
+
+function mapEpsOutcomeToDonationStatus(outcome: EpsTransactionOutcome): string {
+  switch (outcome) {
+    case 'SUCCESS':
+      return 'SUCCEEDED';
+    case 'FAILED':
+      return 'FAILED';
+    case 'CANCELLED':
+      return 'CANCELLED';
+    case 'PENDING':
+      return 'PROCESSING';
     default:
       return 'PROCESSING';
   }

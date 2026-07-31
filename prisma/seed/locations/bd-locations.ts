@@ -1,35 +1,33 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 
 /**
- * Canonical Bangladesh location hierarchy seed — the single source of truth
- * for every module (adoption, fundraising, profiles, lost-and-found,
- * services, nearby search). Idempotent: every row is upserted by its unique
- * `code` (or `iso2` for Country), so re-running never duplicates records and
- * safely picks up name/order corrections.
+ * Canonical Bangladesh location hierarchy seed for Furtail.
  *
- * Data sources (prisma/seeds/data/):
- * - bd.country.json      — Country (ISO alpha-2 "BD")
- * - bd.divisions.json    — 8 divisions (complete, official)
- * - bd.districts.json    — 64 districts (complete, official), by divisionCode
- * - bd.upazilas.json     — 495 upazilas/thanas (complete, official), by districtCode
- * - bd.areas.json        — union-level rows (type "UNION"), by upazilaCode.
- *   NOTE: despite the filename, every row in this file is a union (the
- *   dataset predates the dedicated BdUnion table); it is seeded into
- *   `BdUnion`, not `BdArea`.
- * - bd.wards-and-cc.json — the Dhaka urban branch plus a small carry-forward
- *   set of locality rows. It intentionally mixes current DNCC records,
- *   historical DSCC records, and a few legacy-compatible rural leaf rows.
- *   Treat this file as a reviewed, partially current urban dataset, not a
- *   complete current Dhaka hierarchy.
+ * Canonical source comparison:
+ * - Rural hierarchy is aligned to the BPA geocode source and uses the checked-in
+ *   stable code pattern already present in Furtail (`DIV-*`, `DIS-*`, `UPA-*`,
+ *   `ARE-*`).
+ * - Urban hierarchy is imported from BPA's reviewed `city-corporations.json`
+ *   payload, covering 12 city corporations, 17 zones, and 129 wards.
+ *
+ * Idempotent:
+ * - canonical rows are upserted by stable code;
+ * - rows that no longer exist in the canonical source are safely deactivated;
+ * - existing row IDs are preserved because updates happen in place.
  */
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'seeds', 'data');
 
-function readJson<T>(file: string): T {
-  return JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), 'utf-8')) as T;
-}
+const DIVISION_NAME_ALIASES = new Map<string, string>([
+  ['barishal', 'barisal'],
+  ['chattogram', 'chattagram'],
+]);
+
+const URBAN_CURRENT_TYPES = new Set(['CITY_CORPORATION', 'CITY_ZONE', 'WARD']);
 
 interface CountryRow {
   iso2: string;
@@ -60,7 +58,7 @@ interface UpazilaRow {
   nameBn?: string;
 }
 
-interface UnionSourceRow {
+interface UnionRow {
   code: string;
   upazilaCode: string;
   nameEn: string;
@@ -68,15 +66,30 @@ interface UnionSourceRow {
   type: string;
 }
 
-interface WardOrCcRow {
-  code: string;
+interface WardEntry {
+  number: number;
   nameEn: string;
-  nameBn?: string;
-  type: string;
-  unionCode?: string;
-  districtCode?: string;
-  parentCode?: string;
-  sortOrder?: number;
+  nameBn: string;
+  area?: string;
+}
+
+interface ZoneEntry {
+  nameEn: string;
+  nameBn: string;
+  code: string;
+  wards: WardEntry[];
+}
+
+interface CityCorporationEntry {
+  nameEn: string;
+  nameBn: string;
+  code: string;
+  districtName: string;
+  divisionName: string;
+  isVerified: boolean;
+  wardCount?: number;
+  zones: ZoneEntry[];
+  _note?: string;
 }
 
 interface UrbanProvenanceRecord {
@@ -92,220 +105,514 @@ interface UrbanProvenanceManifest {
   records: UrbanProvenanceRecord[];
 }
 
+interface RegionRef {
+  id: number;
+  code: string;
+  nameEn: string;
+}
+
+function readJson<T>(file: string): T {
+  return JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), 'utf-8')) as T;
+}
+
 function readRootJson<T>(relativePath: string): T {
-  return JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', relativePath), 'utf-8')) as T;
+  return JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', '..', '..', relativePath), 'utf-8'),
+  ) as T;
+}
+
+function normalize(value: string): string {
+  return value.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+function normalizeAlias(value: string): string {
+  const normalized = normalize(value);
+  return DIVISION_NAME_ALIASES.get(normalized) ?? normalized;
+}
+
+function codeForCorporation(code: string): string {
+  return `CC-${code}`;
+}
+
+function codeForZone(corpCode: string, index: number): string {
+  return `ZONE-${corpCode}-${String(index).padStart(2, '0')}`;
+}
+
+function codeForWard(corpCode: string, wardNumber: number): string {
+  return `WARD-${corpCode}-${String(wardNumber).padStart(2, '0')}`;
+}
+
+async function upsertCountry(prisma: PrismaClient, row: CountryRow) {
+  return prisma.country.upsert({
+    where: { iso2: row.iso2 },
+    update: {
+      iso3: row.iso3 ?? null,
+      name: row.name,
+      nameBn: row.nameBn ?? null,
+      sortOrder: row.sortOrder ?? 0,
+      isActive: row.isActive ?? true,
+    },
+    create: {
+      iso2: row.iso2,
+      iso3: row.iso3 ?? null,
+      name: row.name,
+      nameBn: row.nameBn ?? null,
+      sortOrder: row.sortOrder ?? 0,
+      isActive: row.isActive ?? true,
+    },
+  });
+}
+
+async function deactivateObsoleteRows(
+  rows: Array<{ id: number; code: string; isActive: boolean; type?: string | null }>,
+  canonicalCodes: Set<string>,
+  updateRow: (id: number) => Promise<void>,
+  predicate?: (row: {
+    id: number;
+    code: string;
+    isActive: boolean;
+    type?: string | null;
+  }) => boolean,
+): Promise<string[]> {
+  const obsolete = rows.filter(
+    (row) => row.isActive && !canonicalCodes.has(row.code) && (predicate ? predicate(row) : true),
+  );
+
+  for (const row of obsolete) {
+    await updateRow(row.id);
+  }
+
+  return obsolete.map((row) => row.code);
+}
+
+function buildUrbanMeta(
+  provenanceMap: Map<string, UrbanProvenanceRecord>,
+  code: string,
+): {
+  reviewStatus: string;
+  currentValidity: string;
+  provenance: Prisma.InputJsonValue | typeof Prisma.DbNull;
+} {
+  const provenance = provenanceMap.get(code);
+  if (!provenance) {
+    return {
+      reviewStatus: 'CURRENT_VERIFIED',
+      currentValidity: 'CURRENT_VERIFIED',
+      provenance: Prisma.DbNull,
+    };
+  }
+
+  return {
+    reviewStatus: provenance.reviewStatus,
+    currentValidity: provenance.currentValidity,
+    provenance: {
+      sourceDocument: provenance.sourceDocument,
+      sourcePublicationDate: provenance.sourcePublicationDate,
+      sourcePage: provenance.sourcePage,
+      reviewStatus: provenance.reviewStatus,
+      currentValidity: provenance.currentValidity,
+    },
+  };
 }
 
 export async function seedBdLocations(prisma: PrismaClient): Promise<void> {
   console.log('Seeding Bangladesh location reference data...');
+
   const urbanProvenance = new Map(
-    readRootJson<UrbanProvenanceManifest>('migration-reports/dhaka-urban-provenance-audit.json').records.map(
-      (row) => [row.code, row],
-    ),
+    readRootJson<UrbanProvenanceManifest>(
+      'migration-reports/dhaka-urban-provenance-audit.json',
+    ).records.map((row) => [row.code, row]),
   );
 
   // --- Country -------------------------------------------------------------
   const countries = readJson<CountryRow[]>('bd.country.json');
-  for (const c of countries) {
-    await prisma.country.upsert({
-      where: { iso2: c.iso2 },
-      update: {
-        iso3: c.iso3 ?? null,
-        name: c.name,
-        nameBn: c.nameBn ?? null,
-        sortOrder: c.sortOrder ?? 0,
-        isActive: c.isActive ?? true,
-      },
-      create: {
-        iso2: c.iso2,
-        iso3: c.iso3 ?? null,
-        name: c.name,
-        nameBn: c.nameBn ?? null,
-        sortOrder: c.sortOrder ?? 0,
-        isActive: c.isActive ?? true,
-      },
-    });
+  for (const country of countries) {
+    await upsertCountry(prisma, country);
   }
   console.log(`  Country: ${countries.length} upserted`);
 
-  // --- Divisions -------------------------------------------------------------
+  // --- Divisions -----------------------------------------------------------
   const divisions = readJson<DivisionRow[]>('bd.divisions.json');
-  for (let i = 0; i < divisions.length; i += 1) {
-    const d = divisions[i]!;
-    await prisma.bdDivision.upsert({
-      where: { code: d.code },
-      update: { nameEn: d.nameEn, nameBn: d.nameBn ?? null },
-      create: { code: d.code, nameEn: d.nameEn, nameBn: d.nameBn ?? null },
-      select: { id: true },
+  const divisionByCode = new Map<string, RegionRef>();
+  const divisionByName = new Map<string, RegionRef>();
+  for (let index = 0; index < divisions.length; index += 1) {
+    const division = divisions[index]!;
+    const saved = await prisma.bdDivision.upsert({
+      where: { code: division.code },
+      update: {
+        nameEn: division.nameEn,
+        nameBn: division.nameBn ?? null,
+        sortOrder: index + 1,
+        isActive: true,
+      },
+      create: {
+        code: division.code,
+        nameEn: division.nameEn,
+        nameBn: division.nameBn ?? null,
+        sortOrder: index + 1,
+        isActive: true,
+      },
+      select: { id: true, code: true, nameEn: true },
     });
+    const ref = { id: saved.id, code: saved.code, nameEn: saved.nameEn };
+    divisionByCode.set(division.code, ref);
+    divisionByName.set(normalize(division.nameEn), ref);
   }
-  const divisionIdByCode = await idMapByCode(prisma.bdDivision);
   console.log(`  Divisions: ${divisions.length} upserted`);
 
-  // --- Districts -------------------------------------------------------------
+  // --- Districts -----------------------------------------------------------
   const districts = readJson<DistrictRow[]>('bd.districts.json');
-  let districtsSeeded = 0;
+  const districtByCode = new Map<string, RegionRef & { divisionId: number }>();
+  const districtByName = new Map<string, RegionRef & { divisionId: number }>();
   let districtsSkipped = 0;
-  for (let i = 0; i < districts.length; i += 1) {
-    const d = districts[i]!;
-    const divisionId = divisionIdByCode.get(d.divisionCode);
-    if (!divisionId) {
-      console.warn(`  ! Skipping district ${d.code}: unknown divisionCode ${d.divisionCode}`);
+
+  for (let index = 0; index < districts.length; index += 1) {
+    const district = districts[index]!;
+    const division = divisionByCode.get(district.divisionCode);
+    if (!division) {
+      console.warn(
+        `  ! Skipping district ${district.code}: unknown divisionCode ${district.divisionCode}`,
+      );
       districtsSkipped += 1;
       continue;
     }
-    await prisma.bdDistrict.upsert({
-      where: { code: d.code },
-      update: { nameEn: d.nameEn, nameBn: d.nameBn ?? null, divisionId },
-      create: { code: d.code, nameEn: d.nameEn, nameBn: d.nameBn ?? null, divisionId },
-      select: { id: true },
+
+    const saved = await prisma.bdDistrict.upsert({
+      where: { code: district.code },
+      update: {
+        nameEn: district.nameEn,
+        nameBn: district.nameBn ?? null,
+        divisionId: division.id,
+        sortOrder: index + 1,
+        isActive: true,
+      },
+      create: {
+        code: district.code,
+        nameEn: district.nameEn,
+        nameBn: district.nameBn ?? null,
+        divisionId: division.id,
+        sortOrder: index + 1,
+        isActive: true,
+      },
+      select: { id: true, code: true, nameEn: true, divisionId: true },
     });
-    districtsSeeded += 1;
+
+    const ref = {
+      id: saved.id,
+      code: saved.code,
+      nameEn: saved.nameEn,
+      divisionId: saved.divisionId,
+    };
+    districtByCode.set(district.code, ref);
+    districtByName.set(normalize(district.nameEn), ref);
   }
-  const districtIdByCode = await idMapByCode(prisma.bdDistrict);
   console.log(
-    `  Districts: ${districtsSeeded} upserted${districtsSkipped ? `, ${districtsSkipped} skipped (unresolved parent)` : ''}`,
+    `  Districts: ${districts.length - districtsSkipped} upserted${districtsSkipped ? `, ${districtsSkipped} skipped (unresolved parent)` : ''}`,
   );
 
-  // --- Upazilas -------------------------------------------------------------
+  // --- Upazilas ------------------------------------------------------------
   const upazilas = readJson<UpazilaRow[]>('bd.upazilas.json');
-  let upazilasSeeded = 0;
+  const upazilaCodes = new Set<string>();
   let upazilasSkipped = 0;
-  for (let i = 0; i < upazilas.length; i += 1) {
-    const u = upazilas[i]!;
-    const districtId = districtIdByCode.get(u.districtCode);
-    if (!districtId) {
-      console.warn(`  ! Skipping upazila ${u.code}: unknown districtCode ${u.districtCode}`);
+
+  for (let index = 0; index < upazilas.length; index += 1) {
+    const upazila = upazilas[index]!;
+    upazilaCodes.add(upazila.code);
+
+    const district = districtByCode.get(upazila.districtCode);
+    if (!district) {
+      console.warn(
+        `  ! Skipping upazila ${upazila.code}: unknown districtCode ${upazila.districtCode}`,
+      );
       upazilasSkipped += 1;
       continue;
     }
+
     await prisma.bdUpazila.upsert({
-      where: { code: u.code },
-      update: { nameEn: u.nameEn, nameBn: u.nameBn ?? null, districtId },
-      create: { code: u.code, nameEn: u.nameEn, nameBn: u.nameBn ?? null, districtId },
-      select: { id: true },
+      where: { code: upazila.code },
+      update: {
+        nameEn: upazila.nameEn,
+        nameBn: upazila.nameBn ?? null,
+        districtId: district.id,
+        sortOrder: index + 1,
+        isActive: true,
+      },
+      create: {
+        code: upazila.code,
+        nameEn: upazila.nameEn,
+        nameBn: upazila.nameBn ?? null,
+        districtId: district.id,
+        sortOrder: index + 1,
+        isActive: true,
+      },
     });
-    upazilasSeeded += 1;
   }
-  const upazilaIdByCode = await idMapByCode(prisma.bdUpazila);
-  console.log(
-    `  Upazilas: ${upazilasSeeded} upserted${upazilasSkipped ? `, ${upazilasSkipped} skipped (unresolved parent)` : ''}`,
+
+  const obsoleteUpazilas = await deactivateObsoleteRows(
+    await prisma.bdUpazila.findMany({ select: { id: true, code: true, isActive: true } }),
+    upazilaCodes,
+    async (id) => {
+      await prisma.bdUpazila.update({ where: { id }, data: { isActive: false } });
+    },
   );
 
-  // --- Unions (sourced from bd.areas.json's UNION-typed rows) --------------
-  const unionRows = readJson<UnionSourceRow[]>('bd.areas.json').filter((r) => r.type === 'UNION');
-  let unionsSeeded = 0;
+  console.log(
+    `  Upazilas: ${upazilas.length - upazilasSkipped} upserted${upazilasSkipped ? `, ${upazilasSkipped} skipped (unresolved parent)` : ''}${obsoleteUpazilas.length ? `, ${obsoleteUpazilas.length} obsolete deactivated` : ''}`,
+  );
+  if (obsoleteUpazilas.length > 0) {
+    console.log(`  Upazila cleanup: ${obsoleteUpazilas.join(', ')}`);
+  }
+
+  // --- Unions --------------------------------------------------------------
+  const unionRows = readJson<UnionRow[]>('bd.areas.json').filter((row) => row.type === 'UNION');
+  const unionCodes = new Set<string>();
   let unionsSkipped = 0;
-  for (let i = 0; i < unionRows.length; i += 1) {
-    const u = unionRows[i]!;
-    const upazilaId = upazilaIdByCode.get(u.upazilaCode);
-    if (!upazilaId) {
-      console.warn(`  ! Skipping union ${u.code}: unknown upazilaCode ${u.upazilaCode}`);
+
+  for (let index = 0; index < unionRows.length; index += 1) {
+    const union = unionRows[index]!;
+    unionCodes.add(union.code);
+
+    const upazila = await prisma.bdUpazila.findFirst({
+      where: { code: union.upazilaCode, isActive: true },
+      select: { id: true, code: true, nameEn: true },
+    });
+    if (!upazila) {
+      console.warn(`  ! Skipping union ${union.code}: unknown upazilaCode ${union.upazilaCode}`);
       unionsSkipped += 1;
       continue;
     }
-    await prisma.bdUnion.upsert({
-      where: { code: u.code },
-      update: { nameEn: u.nameEn, nameBn: u.nameBn ?? null, upazilaId },
-      create: { code: u.code, nameEn: u.nameEn, nameBn: u.nameBn ?? null, upazilaId },
-      select: { id: true },
-    });
-    unionsSeeded += 1;
-  }
-  const unionIdByCode = await idMapByCode(prisma.bdUnion);
-  console.log(
-    `  Unions: ${unionsSeeded} upserted${unionsSkipped ? `, ${unionsSkipped} skipped (unresolved parent)` : ''}`,
-  );
 
-  // --- Areas: current DNCC rows, historical DSCC rows, and a small
-  // carry-forward set of rural/locality rows. Processed in file order —
-  // parents (city corporations, then zones, then wards) must precede their
-  // children so `parentCode` resolves on first pass.
-  const wardRows = readJson<WardOrCcRow[]>('bd.wards-and-cc.json');
-  const areaIdByCode = new Map<string, number>();
-  let areasSeeded = 0;
-  let areasSkipped = 0;
-  for (let i = 0; i < wardRows.length; i += 1) {
-    const a = wardRows[i]!;
-    const unionId = a.unionCode ? unionIdByCode.get(a.unionCode) : undefined;
-    const districtId = a.districtCode ? districtIdByCode.get(a.districtCode) : undefined;
-    const parentId = a.parentCode ? areaIdByCode.get(a.parentCode) : undefined;
-    const provenance = urbanProvenance.get(a.code);
-    if (a.unionCode && !unionId) {
-      console.warn(`  ! Skipping area ${a.code}: unknown unionCode ${a.unionCode}`);
-      areasSkipped += 1;
-      continue;
-    }
-    if (a.districtCode && !districtId) {
-      console.warn(`  ! Skipping area ${a.code}: unknown districtCode ${a.districtCode}`);
-      areasSkipped += 1;
-      continue;
-    }
-    if (a.parentCode && !parentId) {
-      console.warn(
-        `  ! Skipping area ${a.code}: unknown parentCode ${a.parentCode} (seed order issue)`,
-      );
-      areasSkipped += 1;
-      continue;
-    }
-    const row = await prisma.bdArea.upsert({
-      where: { code: a.code },
+    await prisma.bdUnion.upsert({
+      where: { code: union.code },
       update: {
-        nameEn: a.nameEn,
-        nameBn: a.nameBn ?? null,
-        type: a.type,
-        reviewStatus: provenance?.reviewStatus ?? 'CURRENT_VERIFIED',
-        currentValidity: provenance?.currentValidity ?? 'CURRENT_VERIFIED',
-        provenance: provenance
-          ? {
-              sourceDocument: provenance.sourceDocument,
-              sourcePublicationDate: provenance.sourcePublicationDate,
-              sourcePage: provenance.sourcePage,
-              reviewStatus: provenance.reviewStatus,
-              currentValidity: provenance.currentValidity,
-            }
-          : Prisma.DbNull,
-        unionId: unionId ?? null,
-        districtId: districtId ?? null,
-        parentId: parentId ?? null,
+        nameEn: union.nameEn,
+        nameBn: union.nameBn ?? null,
+        upazilaId: upazila.id,
+        sortOrder: index + 1,
+        isActive: true,
       },
       create: {
-        code: a.code,
-        nameEn: a.nameEn,
-        nameBn: a.nameBn ?? null,
-        type: a.type,
-        reviewStatus: provenance?.reviewStatus ?? 'CURRENT_VERIFIED',
-        currentValidity: provenance?.currentValidity ?? 'CURRENT_VERIFIED',
-        provenance: provenance
-          ? {
-              sourceDocument: provenance.sourceDocument,
-              sourcePublicationDate: provenance.sourcePublicationDate,
-              sourcePage: provenance.sourcePage,
-              reviewStatus: provenance.reviewStatus,
-              currentValidity: provenance.currentValidity,
-            }
-          : Prisma.DbNull,
-        unionId: unionId ?? null,
-        districtId: districtId ?? null,
-        parentId: parentId ?? null,
+        code: union.code,
+        nameEn: union.nameEn,
+        nameBn: union.nameBn ?? null,
+        upazilaId: upazila.id,
+        sortOrder: index + 1,
+        isActive: true,
+      },
+    });
+  }
+
+  const obsoleteUnions = await deactivateObsoleteRows(
+    await prisma.bdUnion.findMany({ select: { id: true, code: true, isActive: true } }),
+    unionCodes,
+    async (id) => {
+      await prisma.bdUnion.update({ where: { id }, data: { isActive: false } });
+    },
+  );
+
+  console.log(
+    `  Unions: ${unionRows.length - unionsSkipped} upserted${unionsSkipped ? `, ${unionsSkipped} skipped (unresolved parent)` : ''}${obsoleteUnions.length ? `, ${obsoleteUnions.length} obsolete deactivated` : ''}`,
+  );
+
+  // --- Urban hierarchy -----------------------------------------------------
+  const cityCorporations = readJson<CityCorporationEntry[]>('bd.wards-and-cc.json');
+  const urbanCodes = new Set<string>();
+  let corporationsSeeded = 0;
+  let zonesSeeded = 0;
+  let wardsSeeded = 0;
+  let urbanSkipped = 0;
+
+  for (const corp of cityCorporations) {
+    const divisionRef = divisionByName.get(normalizeAlias(corp.divisionName));
+    const districtRef = districtByName.get(normalize(corp.districtName));
+
+    if (!divisionRef) {
+      console.warn(
+        `  ! Skipping city corporation ${corp.code}: unknown divisionName ${corp.divisionName}`,
+      );
+      urbanSkipped += 1;
+      continue;
+    }
+
+    if (!districtRef) {
+      console.warn(
+        `  ! Skipping city corporation ${corp.code}: unknown districtName ${corp.districtName}`,
+      );
+      urbanSkipped += 1;
+      continue;
+    }
+
+    if (districtRef.divisionId !== divisionRef.id) {
+      console.warn(
+        `  ! Skipping city corporation ${corp.code}: district ${corp.districtName} does not belong to division ${corp.divisionName}`,
+      );
+      urbanSkipped += 1;
+      continue;
+    }
+
+    const corpCode = codeForCorporation(corp.code);
+    urbanCodes.add(corpCode);
+    const corpMeta = buildUrbanMeta(urbanProvenance, corpCode);
+
+    const corpRow = await prisma.bdArea.upsert({
+      where: { code: corpCode },
+      update: {
+        nameEn: corp.nameEn,
+        nameBn: corp.nameBn ?? null,
+        type: 'CITY_CORPORATION',
+        reviewStatus: corpMeta.reviewStatus,
+        currentValidity: corpMeta.currentValidity,
+        provenance: corpMeta.provenance,
+        unionId: null,
+        upazilaId: null,
+        districtId: districtRef.id,
+        parentId: null,
+        sortOrder: corporationsSeeded + 1,
+        isActive: true,
+      },
+      create: {
+        code: corpCode,
+        nameEn: corp.nameEn,
+        nameBn: corp.nameBn ?? null,
+        type: 'CITY_CORPORATION',
+        reviewStatus: corpMeta.reviewStatus,
+        currentValidity: corpMeta.currentValidity,
+        provenance: corpMeta.provenance,
+        unionId: null,
+        upazilaId: null,
+        districtId: districtRef.id,
+        parentId: null,
+        sortOrder: corporationsSeeded + 1,
+        isActive: true,
       },
       select: { id: true },
     });
-    areaIdByCode.set(a.code, row.id);
-    areasSeeded += 1;
+    corporationsSeeded += 1;
+
+    const shouldExpandToZones = corp.code === 'DNCC' || corp.code === 'DSCC';
+
+    if (shouldExpandToZones && corp.zones.length > 0) {
+      for (let zoneIndex = 0; zoneIndex < corp.zones.length; zoneIndex += 1) {
+        const zone = corp.zones[zoneIndex]!;
+        const zoneCode = codeForZone(corp.code, zoneIndex + 1);
+        urbanCodes.add(zoneCode);
+        const zoneMeta = buildUrbanMeta(urbanProvenance, zoneCode);
+
+        const zoneRow = await prisma.bdArea.upsert({
+          where: { code: zoneCode },
+          update: {
+            nameEn: zone.nameEn,
+            nameBn: zone.nameBn ?? null,
+            type: 'CITY_ZONE',
+            reviewStatus: zoneMeta.reviewStatus,
+            currentValidity: zoneMeta.currentValidity,
+            provenance: zoneMeta.provenance,
+            unionId: null,
+            upazilaId: null,
+            districtId: districtRef.id,
+            parentId: corpRow.id,
+            sortOrder: zoneIndex + 1,
+            isActive: true,
+          },
+          create: {
+            code: zoneCode,
+            nameEn: zone.nameEn,
+            nameBn: zone.nameBn ?? null,
+            type: 'CITY_ZONE',
+            reviewStatus: zoneMeta.reviewStatus,
+            currentValidity: zoneMeta.currentValidity,
+            provenance: zoneMeta.provenance,
+            unionId: null,
+            upazilaId: null,
+            districtId: districtRef.id,
+            parentId: corpRow.id,
+            sortOrder: zoneIndex + 1,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        void zoneRow;
+        zonesSeeded += 1;
+
+        for (const ward of zone.wards) {
+          const wardCode = codeForWard(corp.code, ward.number);
+          urbanCodes.add(wardCode);
+          const wardMeta = buildUrbanMeta(urbanProvenance, wardCode);
+          await prisma.bdArea.upsert({
+            where: { code: wardCode },
+            update: {
+              nameEn: ward.area ? `${ward.nameEn} - ${ward.area}` : ward.nameEn,
+              nameBn: ward.nameBn ?? null,
+              type: 'WARD',
+              reviewStatus: wardMeta.reviewStatus,
+              currentValidity: wardMeta.currentValidity,
+              provenance: wardMeta.provenance,
+              unionId: null,
+              upazilaId: null,
+              districtId: districtRef.id,
+              parentId: zoneRow.id,
+              sortOrder: ward.number,
+              isActive: true,
+            },
+            create: {
+              code: wardCode,
+              nameEn: ward.area ? `${ward.nameEn} - ${ward.area}` : ward.nameEn,
+              nameBn: ward.nameBn ?? null,
+              type: 'WARD',
+              reviewStatus: wardMeta.reviewStatus,
+              currentValidity: wardMeta.currentValidity,
+              provenance: wardMeta.provenance,
+              unionId: null,
+              upazilaId: null,
+              districtId: districtRef.id,
+              parentId: zoneRow.id,
+              sortOrder: ward.number,
+              isActive: true,
+            },
+          });
+          wardsSeeded += 1;
+        }
+      }
+    }
   }
-  console.log(
-    `  Areas (wards/city-corporations/zones/localities): ${areasSeeded} upserted${areasSkipped ? `, ${areasSkipped} skipped` : ''}`,
+
+  const obsoleteUrbanRows = await deactivateObsoleteRows(
+    await prisma.bdArea.findMany({ select: { id: true, code: true, isActive: true, type: true } }),
+    urbanCodes,
+    async (id) => {
+      await prisma.bdArea.update({ where: { id }, data: { isActive: false } });
+    },
+    (row) => typeof row.type === 'string' && URBAN_CURRENT_TYPES.has(row.type),
   );
+
+  console.log(
+    `  City corporations: ${corporationsSeeded} upserted${urbanSkipped ? `, ${urbanSkipped} skipped` : ''}`,
+  );
+  console.log(`  Zones: ${zonesSeeded} upserted`);
+  console.log(`  Wards: ${wardsSeeded} upserted`);
+  if (obsoleteUrbanRows.length > 0) {
+    console.log(`  Urban cleanup: ${obsoleteUrbanRows.length} obsolete row(s) deactivated`);
+    console.log(`  Urban cleanup codes: ${obsoleteUrbanRows.join(', ')}`);
+  }
 
   console.log('Bangladesh location reference data seeded.');
 }
 
-async function idMapByCode(model: {
-  findMany: (args: {
-    select: { id: true; code: true };
-  }) => Promise<Array<{ id: number; code: string }>>;
-}): Promise<Map<string, number>> {
-  const rows = await model.findMany({ select: { id: true, code: true } });
-  return new Map(rows.map((row) => [row.code, row.id]));
+if (require.main === module) {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL is required to run the Bangladesh location seed CLI');
+  }
+
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg(new Pool({ connectionString: databaseUrl })),
+  });
+  seedBdLocations(prisma)
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
 }

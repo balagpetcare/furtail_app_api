@@ -260,9 +260,10 @@ export class LocationStore {
     const isCurrentSelectable = isSelectableForNewSelection(record, parent);
     const isLegacy = !isCurrentSelectable;
     let reviewMessage = null;
-    
+
     if (isLegacy) {
-      reviewMessage = 'This location is historical and no longer valid for new records. Please update your selection.';
+      reviewMessage =
+        'This location is historical and no longer valid for new records. Please update your selection.';
     }
 
     return {
@@ -274,17 +275,16 @@ export class LocationStore {
   }
 
   /**
-   * Validates that a partial division/district/upazila/union/area selection
-   * is internally consistent (each provided child actually belongs to its
-   * provided parent). Used by the create-listing forms to catch a stale
-   * selection (e.g. district changed but union wasn't cleared) before submit.
+   * Validates that a partial Bangladesh location selection is internally
+   * consistent (each provided child actually belongs to its provided parent).
+   * Used by the create-listing forms to catch a stale selection
+   * (e.g. district changed but union wasn't cleared) before submit.
    */
   async validateSelection(input: {
     divisionId?: number;
     districtId?: number;
     upazilaId?: number;
     unionId?: number;
-    areaId?: number;
     cityCorporationId?: number;
     zoneId?: number;
     wardId?: number;
@@ -317,128 +317,85 @@ export class LocationStore {
       return { valid: false, reason: 'Cannot mix rural and urban location parameters' };
     }
 
-    // 1. Rural branch
-    if (hasRural || (!hasUrban && input.areaId !== undefined)) {
-      let area: AreaRecord | null = null;
-      if (input.areaId !== undefined) {
-        area = await this.ds.getArea(input.areaId);
-        if (!area) return { valid: false, reason: 'Unknown areaId' };
-        if (
-          area.type === 'CITY_CORPORATION' ||
-          area.type === 'ZONE' ||
-          area.type === 'WARD'
-        ) {
-          return {
-            valid: false,
-            reason: 'areaId is an urban area but rural parameters were specified',
-          };
-        }
+    // Bangladesh locations are canonical only when they end at Ward
+    // (urban) or Union (rural). The legacy area/locality leaf is retained
+    // for historical reads, but it is not part of the write-time contract.
+    if (hasRural) {
+      if (input.upazilaId === undefined || input.unionId === undefined) {
+        return {
+          valid: false,
+          reason: 'Rural locations require divisionId, districtId, upazilaId, and unionId',
+        };
       }
 
-      if (input.upazilaId !== undefined) {
-        const upazila = await this.ds.getUpazila(input.upazilaId);
-        if (!upazila) return { valid: false, reason: 'Unknown upazilaId' };
-        const districtId = (upazila as unknown as { districtId?: number }).districtId;
-        if (
-          input.districtId !== undefined &&
-          districtId !== undefined &&
-          districtId !== input.districtId
-        ) {
-          return { valid: false, reason: 'upazilaId does not belong to districtId' };
-        }
-      }
-
-      if (input.unionId !== undefined) {
-        const union = await this.ds.getUnion(input.unionId);
-        if (!union) return { valid: false, reason: 'Unknown unionId' };
-        const upazilaId = (union as unknown as { upazilaId?: number }).upazilaId;
-        if (
-          input.upazilaId !== undefined &&
-          upazilaId !== undefined &&
-          upazilaId !== input.upazilaId
-        ) {
-          return { valid: false, reason: 'unionId does not belong to upazilaId' };
-        }
-      }
-
+      const upazila = await this.ds.getUpazila(input.upazilaId);
+      if (!upazila) return { valid: false, reason: 'Unknown upazilaId' };
+      const districtId = (upazila as unknown as { districtId?: number }).districtId;
       if (
-        area &&
-        input.unionId !== undefined &&
-        area.unionId !== null &&
-        area.unionId !== input.unionId
+        input.districtId !== undefined &&
+        districtId !== undefined &&
+        districtId !== input.districtId
       ) {
-        return { valid: false, reason: 'areaId does not belong to unionId' };
+        return { valid: false, reason: 'upazilaId does not belong to districtId' };
       }
-      
-      if (area) {
-        let parent = null;
-        if (area.parentId) parent = await this.ds.getArea(area.parentId);
-        if (!isSelectableForNewSelection(area, parent)) {
-          return { valid: false, reason: 'areaId is not selectable for new records' };
-        }
+
+      const union = await this.ds.getUnion(input.unionId);
+      if (!union) return { valid: false, reason: 'Unknown unionId' };
+      const unionUpazilaId = (union as unknown as { upazilaId?: number }).upazilaId;
+      if (
+        input.upazilaId !== undefined &&
+        unionUpazilaId !== undefined &&
+        unionUpazilaId !== input.upazilaId
+      ) {
+        return { valid: false, reason: 'unionId does not belong to upazilaId' };
       }
     }
 
     // 2. Urban branch
     if (hasUrban) {
-      let cc: AreaRecord | null = null;
-      let zone: AreaRecord | null = null;
-      let ward: AreaRecord | null = null;
-      let area: AreaRecord | null = null;
-
-      if (input.cityCorporationId !== undefined) {
-        cc = await this.ds.getArea(input.cityCorporationId);
-        if (!cc || cc.type !== 'CITY_CORPORATION') {
-          return { valid: false, reason: 'Unknown or invalid cityCorporationId' };
-        }
-        if (!isSelectableCurrent(cc)) {
-          return { valid: false, reason: 'cityCorporationId is not selectable for new records' };
-        }
-        if (input.districtId !== undefined && cc.districtId !== input.districtId) {
-          return { valid: false, reason: 'cityCorporationId does not belong to districtId' };
-        }
+      if (
+        input.cityCorporationId === undefined ||
+        input.zoneId === undefined ||
+        input.wardId === undefined
+      ) {
+        return {
+          valid: false,
+          reason:
+            'Urban locations require divisionId, districtId, cityCorporationId, zoneId, and wardId',
+        };
       }
 
-      if (input.zoneId !== undefined) {
-        zone = await this.ds.getArea(input.zoneId);
-        if (!zone || zone.type !== 'ZONE') {
-          return { valid: false, reason: 'Unknown or invalid zoneId' };
-        }
-        if (!isSelectableForNewSelection(zone, cc)) {
-          return { valid: false, reason: 'zoneId is not selectable for new records' };
-        }
-        if (
-          input.cityCorporationId !== undefined &&
-          zone.parentId !== input.cityCorporationId
-        ) {
-          return { valid: false, reason: 'zoneId does not belong to cityCorporationId' };
-        }
+      const cc = await this.ds.getArea(input.cityCorporationId);
+      if (!cc || cc.type !== 'CITY_CORPORATION') {
+        return { valid: false, reason: 'Unknown or invalid cityCorporationId' };
+      }
+      if (!isSelectableCurrent(cc)) {
+        return { valid: false, reason: 'cityCorporationId is not selectable for new records' };
+      }
+      if (input.districtId !== undefined && cc.districtId !== input.districtId) {
+        return { valid: false, reason: 'cityCorporationId does not belong to districtId' };
       }
 
-      if (input.wardId !== undefined) {
-        ward = await this.ds.getArea(input.wardId);
-        if (!ward || ward.type !== 'WARD') {
-          return { valid: false, reason: 'Unknown or invalid wardId' };
-        }
-        if (!isSelectableForNewSelection(ward, zone)) {
-          return { valid: false, reason: 'wardId is not selectable for new records' };
-        }
-        if (input.zoneId !== undefined && ward.parentId !== input.zoneId) {
-          return { valid: false, reason: 'wardId does not belong to zoneId' };
-        }
+      const zone = await this.ds.getArea(input.zoneId);
+      if (!zone || zone.type !== 'ZONE') {
+        return { valid: false, reason: 'Unknown or invalid zoneId' };
+      }
+      if (!isSelectableForNewSelection(zone, cc)) {
+        return { valid: false, reason: 'zoneId is not selectable for new records' };
+      }
+      if (zone.parentId !== input.cityCorporationId) {
+        return { valid: false, reason: 'zoneId does not belong to cityCorporationId' };
       }
 
-      if (input.areaId !== undefined) {
-        area = await this.ds.getArea(input.areaId);
-        if (!area || area.type !== 'AREA') {
-          return { valid: false, reason: 'Unknown or invalid areaId' };
-        }
-        if (!isSelectableForNewSelection(area, ward)) {
-          return { valid: false, reason: 'areaId is not selectable for new records' };
-        }
-        if (input.wardId !== undefined && area.parentId !== input.wardId) {
-          return { valid: false, reason: 'areaId does not belong to wardId' };
-        }
+      const ward = await this.ds.getArea(input.wardId);
+      if (!ward || ward.type !== 'WARD') {
+        return { valid: false, reason: 'Unknown or invalid wardId' };
+      }
+      if (!isSelectableForNewSelection(ward, zone)) {
+        return { valid: false, reason: 'wardId is not selectable for new records' };
+      }
+      if (ward.parentId !== input.zoneId) {
+        return { valid: false, reason: 'wardId does not belong to zoneId' };
       }
     }
 

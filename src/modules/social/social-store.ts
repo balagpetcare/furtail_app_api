@@ -471,7 +471,6 @@ export interface SocialMediaLookupPayload {
   filename: string;
   mimetype: string;
   size: number;
-  storageKey: string;
   url: string;
   thumbnailUrl: string | null;
   hlsUrl: string | null;
@@ -918,31 +917,45 @@ export class SocialCoreStore {
     }
 
     const stored = await this.storage.upload(input);
-    const mediaInput = {
-      ownerUserId,
-      filename: input.filename,
-      mimetype: input.mimetype,
-      size: input.size,
-      stored,
-      purpose: input.purpose,
-      contentType: opts.contentType,
-      contentId: opts.contentId,
-      uploadIdempotencyKey: idempotencyKey,
-    };
+    try {
+      const mediaInput = {
+        ownerUserId,
+        filename: input.filename,
+        mimetype: input.mimetype,
+        size: input.size,
+        stored,
+        purpose: input.purpose,
+        contentType: opts.contentType,
+        contentId: opts.contentId,
+        uploadIdempotencyKey: idempotencyKey,
+      };
 
-    const media = this.mediaPrisma
-      ? await this.persistUploadedMediaRecord(mediaInput)
-      : this.addMediaRecord(mediaInput);
+      const media = this.mediaPrisma
+        ? await this.persistUploadedMediaRecord(mediaInput)
+        : this.addMediaRecord(mediaInput);
 
-    if (this.mediaPrisma) {
-      this.cacheMediaRecord(media);
+      if (this.mediaPrisma) {
+        this.cacheMediaRecord(media);
+      }
+
+      if (idempotencyKey) {
+        this.uploadIdempotencyKeys.set(`${ownerUserId}:${idempotencyKey}`, media.id);
+      }
+
+      return this.mediaToUploadResult(media);
+    } catch (error) {
+      await this.safeDeleteStoredMedia(stored.storageKey);
+      throw error;
     }
+  }
 
-    if (idempotencyKey) {
-      this.uploadIdempotencyKeys.set(`${ownerUserId}:${idempotencyKey}`, media.id);
+  private async safeDeleteStoredMedia(storageKey: string): Promise<void> {
+    try {
+      await this.storage.delete(storageKey);
+    } catch (error) {
+      void error;
+      // Best-effort cleanup. Upload callers still receive the original error.
     }
-
-    return this.mediaToUploadResult(media);
   }
 
   private async persistUploadedMediaRecord(input: {
@@ -2210,7 +2223,6 @@ export class SocialCoreStore {
       filename: media.filename,
       mimetype: media.mimetype,
       size: media.size,
-      storageKey: media.storageKey,
       url: media.url,
       thumbnailUrl: media.thumbnailUrl,
       hlsUrl: media.hlsUrl,

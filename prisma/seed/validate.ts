@@ -18,12 +18,15 @@ const seedFiles: SeedFile[] = [
   { name: 'bd.country.json', path: 'prisma/seeds/data/bd.country.json', expectedCount: 1 },
   { name: 'bd.divisions.json', path: 'prisma/seeds/data/bd.divisions.json', expectedCount: 8 },
   { name: 'bd.districts.json', path: 'prisma/seeds/data/bd.districts.json', expectedCount: 64 },
-  { name: 'bd.upazilas.json', path: 'prisma/seeds/data/bd.upazilas.json', expectedCount: 495 },
+  { name: 'bd.upazilas.json', path: 'prisma/seeds/data/bd.upazilas.json', expectedCount: 494 },
   // Union-level rows, keyed by upazilaCode — seeded into BdUnion (see bd-locations.ts).
   { name: 'bd.areas.json', path: 'prisma/seeds/data/bd.areas.json', expectedCount: 4540 },
-  // Reviewed Dhaka urban mix: current DNCC, historical DSCC, and a few
-  // rural/locality carry-forward rows. See migration report for details.
-  { name: 'bd.wards-and-cc.json', path: 'prisma/seeds/data/bd.wards-and-cc.json' }, // 74 rows
+  // Canonical city corporation payload copied from BPA reference data.
+  {
+    name: 'bd.wards-and-cc.json',
+    path: 'prisma/seeds/data/bd.wards-and-cc.json',
+    expectedCount: 12,
+  },
 
   // Animal reference files (canonical — see prisma/seed/animals/animal-references.ts)
   {

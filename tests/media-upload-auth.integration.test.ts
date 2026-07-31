@@ -193,6 +193,31 @@ describe('authenticated media upload — identity resolution and typed errors', 
     expect(res.body.error.code).toBe('MEDIA_SIZE_EXCEEDED');
   }, 20000);
 
+  it('accepts a PDF document upload and normalizes it as a file media item', async () => {
+    const socialStore = createSocialCoreStore();
+    const verifier: TokenVerifier = {
+      async verifyAccessToken(token) {
+        if (token === 'valid-token') return principalFor('1');
+        throw AppError.authenticationInvalid();
+      },
+    };
+    const app = createAppWithDependencies({ authVerifier: verifier, socialStore });
+
+    const res = await request(app)
+      .post('/api/v1/media/upload')
+      .set('Authorization', 'Bearer valid-token')
+      .field('contentType', 'FUNDRAISING_DRAFT')
+      .field('contentId', 'draft-pdf-1')
+      .attach('file', Buffer.from('%PDF-1.4\n%fake\n'), {
+        filename: 'report.pdf',
+        contentType: 'application/pdf',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.type).toBe('FILE');
+    expect(res.body.data.url).toContain('.pdf');
+  });
+
   it('keeps ownership distinguishable between two different resolved users (owner vs non-owner)', async () => {
     const socialStore = createSocialCoreStore();
     const verifier: TokenVerifier = {
