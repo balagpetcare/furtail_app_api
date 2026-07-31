@@ -16,6 +16,7 @@
 
 /** The only status that grants payout/withdrawal access. */
 export const APPROVED_VERIFICATION_STATUS = 'VERIFIED';
+export const ACCOUNT_MONEY_MOVEMENT_BLOCKED_STATUSES = ['SUSPENDED', 'DEACTIVATED'] as const;
 
 export interface FundraisingAccountLike {
   status: string;
@@ -33,7 +34,11 @@ export interface FundraisingAccountLike {
  * campaign moderation are enforced separately and are unaffected by this.
  */
 export function canCreateOrSubmitCampaign(_account: FundraisingAccountLike | null): boolean {
-  return true;
+  return !ACCOUNT_MONEY_MOVEMENT_BLOCKED_STATUSES.includes(
+    (_account?.status ?? '')
+      .trim()
+      .toUpperCase() as (typeof ACCOUNT_MONEY_MOVEMENT_BLOCKED_STATUSES)[number],
+  );
 }
 
 /**
@@ -44,7 +49,11 @@ export function canCreateOrSubmitCampaign(_account: FundraisingAccountLike | nul
  * funding cap) is enforced separately by the store.
  */
 export function canReceiveDonations(_account: FundraisingAccountLike | null): boolean {
-  return true;
+  return !ACCOUNT_MONEY_MOVEMENT_BLOCKED_STATUSES.includes(
+    (_account?.status ?? '')
+      .trim()
+      .toUpperCase() as (typeof ACCOUNT_MONEY_MOVEMENT_BLOCKED_STATUSES)[number],
+  );
 }
 
 /**

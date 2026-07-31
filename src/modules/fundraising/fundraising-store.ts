@@ -7,6 +7,8 @@ import { hasPermission, hasRole } from '../../security/authorization';
 import { getPrisma } from '../../infrastructure/db/prisma-client';
 import { encryptKycField, decryptKycField, looksLikeKycEnvelope } from './kyc-encryption';
 import {
+  canCreateOrSubmitCampaign,
+  canReceiveDonations,
   canWithdrawFunds,
   isPublicVisibleStatus,
   isDonationAllowed,
@@ -20,7 +22,8 @@ import {
 } from './payment-provider';
 import { epsCheckTransactionStatus, type EpsTransactionOutcome } from './eps-client';
 
-export type FundraisingAccountStatus = 'DRAFT' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+export type FundraisingAccountStatus =
+  'DRAFT' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'SUSPENDED' | 'DEACTIVATED';
 export type FundraisingFundingMode = 'ONE_TIME' | 'ONGOING' | 'RECURRING';
 export type FundraisingCampaignStatus =
   | 'DRAFT'
@@ -646,6 +649,74 @@ export interface DonationCheckoutResponse {
   reused: boolean;
 }
 
+interface WalletComputedTotals {
+  currencyCode: string;
+  pendingMinor: bigint;
+  availableMinor: bigint;
+  reservedMinor: bigint;
+  transferredMinor: bigint;
+}
+
+function computeWalletTotalsFromRows(
+  entries: Array<{
+    kind: string;
+    status: string;
+    amountMinor: bigint;
+    sourceType: string | null;
+    sourceId: number | null;
+  }>,
+  approvedWithdraws: Array<{
+    id: number;
+    amountMinor: bigint;
+  }>,
+): WalletComputedTotals {
+  let pendingMinor = 0n;
+  let availableMinor = 0n;
+  let reservedMinor = 0n;
+  let transferredMinor = 0n;
+  const reservedByWithdraw = new Set<number>();
+  const releasedByWithdraw = new Set<number>();
+
+  for (const entry of entries) {
+    const kind = entry.kind.trim().toUpperCase();
+    const status = entry.status.trim().toUpperCase();
+    if (kind === 'CREDIT' && status === 'POSTED') {
+      availableMinor += entry.amountMinor;
+    } else if (kind === 'CREDIT' && status === 'PENDING') {
+      pendingMinor += entry.amountMinor;
+    } else if (kind === 'DEBIT' && status === 'POSTED') {
+      availableMinor -= entry.amountMinor;
+      transferredMinor += entry.amountMinor;
+    } else if (kind === 'RESERVE' && status === 'PENDING') {
+      reservedMinor += entry.amountMinor;
+      availableMinor -= entry.amountMinor;
+      if (entry.sourceType === 'WALLET_WITHDRAW_REQUEST' && entry.sourceId) {
+        reservedByWithdraw.add(entry.sourceId);
+      }
+    } else if (kind === 'RELEASE' && status === 'POSTED') {
+      availableMinor += entry.amountMinor;
+      reservedMinor -= entry.amountMinor;
+      if (entry.sourceType === 'WALLET_WITHDRAW_REQUEST' && entry.sourceId) {
+        releasedByWithdraw.add(entry.sourceId);
+      }
+    }
+  }
+
+  for (const request of approvedWithdraws) {
+    if (!reservedByWithdraw.has(request.id) || releasedByWithdraw.has(request.id)) continue;
+    reservedMinor = reservedMinor < request.amountMinor ? 0n : reservedMinor - request.amountMinor;
+    transferredMinor += request.amountMinor;
+  }
+
+  return {
+    currencyCode: 'BDT',
+    pendingMinor: pendingMinor < 0n ? 0n : pendingMinor,
+    availableMinor: availableMinor < 0n ? 0n : availableMinor,
+    reservedMinor: reservedMinor < 0n ? 0n : reservedMinor,
+    transferredMinor: transferredMinor < 0n ? 0n : transferredMinor,
+  };
+}
+
 export class FundraisingStore {
   private readonly socialStore: SocialCoreStore;
   private readonly webhookSecret: string;
@@ -728,6 +799,13 @@ export class FundraisingStore {
     const account = await this.loadVerificationAccountRecord(userId);
     if (!account)
       throw new FundraisingContractError('NOT_FOUND', 'Fundraising account not found', 404);
+    if (!canCreateOrSubmitCampaign(account)) {
+      throw new FundraisingContractError(
+        'FORBIDDEN',
+        'This account cannot continue fundraising activity',
+        403,
+      );
+    }
     const readiness = this.accountReadinessPayload(account);
     if (!readiness.canStartFundraiser) {
       throw new FundraisingContractError('VALIDATION', 'Fundraising account is not ready', 422);
@@ -830,6 +908,14 @@ export class FundraisingStore {
     idempotencyKey?: string,
   ): Promise<Record<string, unknown>> {
     await this.seedReady;
+    const account = await this.loadVerificationAccountRecord(userId);
+    if (!canCreateOrSubmitCampaign(account)) {
+      throw new FundraisingContractError(
+        'FORBIDDEN',
+        'This account cannot create or update fundraising campaigns',
+        403,
+      );
+    }
     const key = normalizeText(idempotencyKey);
     if (key) {
       const existingKey = await this.prisma.fundraisingIdempotencyKey.findUnique({
@@ -886,6 +972,14 @@ export class FundraisingStore {
     input: FundraisingDraftInput,
   ): Promise<Record<string, unknown>> {
     await this.seedReady;
+    const account = await this.loadVerificationAccountRecord(userId);
+    if (!canCreateOrSubmitCampaign(account)) {
+      throw new FundraisingContractError(
+        'FORBIDDEN',
+        'This account cannot create or update fundraising campaigns',
+        403,
+      );
+    }
     const draft = await this.mustOwnDraftRecord(userId, draftId);
     this.applyDraftInput(draft, input);
     draft.updatedAt = this.now();
@@ -906,6 +1000,14 @@ export class FundraisingStore {
     idempotencyKey?: string,
   ): Promise<Record<string, unknown>> {
     await this.seedReady;
+    const account = await this.loadVerificationAccountRecord(userId);
+    if (!canCreateOrSubmitCampaign(account)) {
+      throw new FundraisingContractError(
+        'FORBIDDEN',
+        'This account cannot submit fundraising campaigns',
+        403,
+      );
+    }
     const key = normalizeText(idempotencyKey);
     if (key) {
       const existingKey = await this.prisma.fundraisingIdempotencyKey.findUnique({
@@ -984,6 +1086,14 @@ export class FundraisingStore {
     input: FundraisingCampaignInput,
   ): Promise<Record<string, unknown>> {
     await this.seedReady;
+    const account = await this.loadVerificationAccountRecord(userId);
+    if (!canCreateOrSubmitCampaign(account)) {
+      throw new FundraisingContractError(
+        'FORBIDDEN',
+        'This account cannot create fundraising campaigns',
+        403,
+      );
+    }
     // Not gated on verification status or on a verification account row
     // existing — see `canCreateOrSubmitCampaign`.
     const draft = this.transaction((state) => {
@@ -1020,6 +1130,14 @@ export class FundraisingStore {
     input: FundraisingCampaignInput,
   ): Promise<Record<string, unknown>> {
     await this.seedReady;
+    const account = await this.loadVerificationAccountRecord(userId);
+    if (!canCreateOrSubmitCampaign(account)) {
+      throw new FundraisingContractError(
+        'FORBIDDEN',
+        'This account cannot update fundraising campaigns',
+        403,
+      );
+    }
     const campaign = await this.mustOwnCampaignRecord(userId, campaignId);
     this.ensureCampaignEditable(campaign);
     if (input.title !== undefined) {
@@ -1099,6 +1217,14 @@ export class FundraisingStore {
 
   async publishCampaign(userId: number, campaignId: number): Promise<Record<string, unknown>> {
     await this.seedReady;
+    const account = await this.loadVerificationAccountRecord(userId);
+    if (!canCreateOrSubmitCampaign(account)) {
+      throw new FundraisingContractError(
+        'FORBIDDEN',
+        'This account cannot publish fundraising campaigns',
+        403,
+      );
+    }
     const campaign = await this.mustOwnCampaignRecord(userId, campaignId);
     if (campaign.status !== 'PENDING_REVIEW') {
       throw new FundraisingContractError(
@@ -1843,6 +1969,7 @@ export class FundraisingStore {
                 : campaign.status,
           },
         });
+        await this.creditWalletForSuccessfulDonationTx(tx, campaign.ownerUserId, donationRow);
       }
 
       await tx.fundraisingWebhookEvent.update({
@@ -4138,6 +4265,14 @@ export class FundraisingStore {
 
   private ensureCanDonate(userId: number, campaign: CampaignRecord): void {
     this.ensureCanViewCampaign(userId, campaign);
+    const ownerAccount = this.state.accounts.get(campaign.ownerUserId) ?? null;
+    if (!canReceiveDonations(ownerAccount)) {
+      throw new FundraisingContractError(
+        'NOT_DONATABLE',
+        'This fundraiser owner cannot receive donations at this time',
+        422,
+      );
+    }
     if (!isDonationEligibleStatus(campaign.status)) {
       throw new FundraisingContractError(
         'NOT_DONATABLE',
@@ -4307,6 +4442,335 @@ export class FundraisingStore {
     }
   }
 
+  private async creditWalletForSuccessfulDonationTx(
+    tx: Prisma.TransactionClient,
+    ownerUserId: number,
+    donation: { id: number; amountMinor: bigint; currencyCode: string; referenceId: string },
+  ): Promise<void> {
+    await tx.walletLedgerEntry.upsert({
+      where: {
+        userId_idempotencyKey: {
+          userId: ownerUserId,
+          idempotencyKey: `donation-credit:${donation.id}`,
+        },
+      },
+      create: {
+        userId: ownerUserId,
+        kind: 'CREDIT',
+        status: 'POSTED',
+        amountMinor: donation.amountMinor,
+        currencyCode: donation.currencyCode,
+        sourceType: 'FUNDRAISING_DONATION',
+        sourceId: donation.id,
+        note: `Fundraising donation ${donation.referenceId} settled`,
+        idempotencyKey: `donation-credit:${donation.id}`,
+        postedAt: this.now(),
+      },
+      update: {
+        status: 'POSTED',
+        postedAt: this.now(),
+      },
+    });
+    await this.syncWalletBalanceFromLedgerTx(tx, ownerUserId);
+  }
+
+  private async computeWalletTotals(userId: number): Promise<WalletComputedTotals> {
+    const entries = await this.prisma.walletLedgerEntry.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+    });
+    const approvedWithdraws = await this.prisma.walletWithdrawRequest.findMany({
+      where: {
+        userId,
+        status: { in: ['APPROVED', 'PROCESSING', 'COMPLETED'] },
+      },
+    });
+    return computeWalletTotalsFromRows(entries, approvedWithdraws);
+  }
+
+  private async syncWalletBalanceFromLedgerTx(
+    tx: Prisma.TransactionClient,
+    userId: number,
+  ): Promise<void> {
+    const entries = await tx.walletLedgerEntry.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+    });
+    const approvedWithdraws = await tx.walletWithdrawRequest.findMany({
+      where: {
+        userId,
+        status: { in: ['APPROVED', 'PROCESSING', 'COMPLETED'] },
+      },
+    });
+    const totals = computeWalletTotalsFromRows(entries, approvedWithdraws);
+    await tx.wallet.upsert({
+      where: { userId },
+      create: {
+        userId,
+        points: 0,
+        balance: new Prisma.Decimal(minorUnitsToDecimalString(totals.availableMinor)),
+        tier: null,
+      },
+      update: {
+        balance: new Prisma.Decimal(minorUnitsToDecimalString(totals.availableMinor)),
+      },
+    });
+  }
+
+  private hasUsablePayoutDetails(details: Record<string, unknown>): boolean {
+    return Object.values(details).some((value) => normalizeText(value) !== null);
+  }
+
+  async getWalletSummary(userId: number): Promise<Record<string, unknown>> {
+    await this.seedReady;
+    const totals = await this.computeWalletTotals(userId);
+    const walletRow = await this.prisma.wallet.findUnique({ where: { userId } });
+    const legacyBalanceMinor = walletRow ? decimalToMinorUnits(walletRow.balance) : 0n;
+    const derivedBalanceMinor = totals.availableMinor + totals.pendingMinor + totals.reservedMinor;
+    const balanceMinor = derivedBalanceMinor > 0n ? derivedBalanceMinor : legacyBalanceMinor;
+    return {
+      id: userId,
+      currency: totals.currencyCode,
+      balance: minorUnitsToDecimalString(balanceMinor),
+      availableBalance: minorUnitsToDecimalString(totals.availableMinor),
+      pendingBalance: minorUnitsToDecimalString(totals.pendingMinor),
+      lockedBalance: minorUnitsToDecimalString(totals.reservedMinor),
+    };
+  }
+
+  async listWalletTransactions(
+    userId: number,
+    limit = 20,
+    cursor?: string,
+  ): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }> {
+    await this.seedReady;
+    const cursorId = parseNumber(cursor);
+    const rows = await this.prisma.walletLedgerEntry.findMany({
+      where: {
+        userId,
+        ...(cursorId === null ? {} : { id: { lt: cursorId } }),
+      },
+      orderBy: { id: 'desc' },
+      take: Math.max(1, Math.min(limit, 100)),
+    });
+    const items = rows.map((row) => ({
+      id: row.id,
+      type: row.kind,
+      status: row.status,
+      amount: minorUnitsToDecimalString(row.amountMinor),
+      sourceType: row.sourceType,
+      sourceId: row.sourceId,
+      note: row.note,
+      createdAt: row.createdAt,
+    }));
+    return {
+      items,
+      nextCursor:
+        rows.length === limit && rows.length > 0 ? String(rows[rows.length - 1]!.id) : null,
+    };
+  }
+
+  async listWalletWithdrawRequests(
+    userId: number,
+    limit = 50,
+    cursor?: string,
+    status?: string,
+  ): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }> {
+    await this.seedReady;
+    const cursorId = parseNumber(cursor);
+    const normalizedStatus = normalizeText(status)?.toUpperCase();
+    const rows = await this.prisma.walletWithdrawRequest.findMany({
+      where: {
+        userId,
+        ...(cursorId === null ? {} : { id: { lt: cursorId } }),
+        ...(normalizedStatus ? { status: normalizedStatus } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: Math.max(1, Math.min(limit, 100)),
+    });
+    const items = rows.map((row) => ({
+      id: row.id,
+      amount: minorUnitsToDecimalString(row.amountMinor),
+      method: row.method,
+      status: row.status,
+      note: row.note,
+      failureReason: row.failureReason,
+      createdAt: row.createdAt,
+    }));
+    return {
+      items,
+      nextCursor:
+        rows.length === limit && rows.length > 0 ? String(rows[rows.length - 1]!.id) : null,
+    };
+  }
+
+  async createWalletWithdrawRequest(
+    userId: number,
+    input: {
+      amountMinor: bigint | string | number;
+      method: string;
+      payoutDetails: Record<string, unknown>;
+      note?: string | null;
+      idempotencyKey: string;
+    },
+  ): Promise<Record<string, unknown>> {
+    await this.seedReady;
+    await this.assertCanWithdrawFunds(userId);
+    const amountMinor = parseMoneyMinor(input.amountMinor, 'amount');
+    if (amountMinor <= 0n) {
+      throw new FundraisingContractError(
+        'VALIDATION',
+        'Withdrawal amount must be greater than zero',
+        422,
+      );
+    }
+    if (amountMinor < 100n) {
+      throw new FundraisingContractError(
+        'VALIDATION',
+        'Withdrawal amount is below the minimum limit',
+        422,
+      );
+    }
+    if (amountMinor > 500000000n) {
+      throw new FundraisingContractError(
+        'VALIDATION',
+        'Withdrawal amount exceeds the maximum limit',
+        422,
+      );
+    }
+    const method = normalizeText(input.method)?.toUpperCase();
+    if (!method) {
+      throw new FundraisingContractError('VALIDATION', 'Withdrawal method is required', 422);
+    }
+    const payoutDetails = this.extractObject(input.payoutDetails);
+    if (!payoutDetails || !this.hasUsablePayoutDetails(payoutDetails)) {
+      throw new FundraisingContractError('VALIDATION', 'Valid payout details are required', 422);
+    }
+    const note = normalizeText(input.note);
+    const idempotencyKey = normalizeText(input.idempotencyKey);
+    if (!idempotencyKey) {
+      throw new FundraisingContractError('VALIDATION', 'Idempotency key is required', 422);
+    }
+    const totals = await this.computeWalletTotals(userId);
+    if (amountMinor > totals.availableMinor) {
+      throw new FundraisingContractError(
+        'VALIDATION',
+        'Withdrawal amount exceeds available balance',
+        422,
+      );
+    }
+    const existingOpen = await this.prisma.walletWithdrawRequest.findFirst({
+      where: {
+        userId,
+        status: { in: ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'PROCESSING'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existingOpen) {
+      throw new FundraisingContractError('CONFLICT', 'A withdrawal is already under review', 409);
+    }
+
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const request = await tx.walletWithdrawRequest.create({
+          data: {
+            userId,
+            amountMinor,
+            currencyCode: totals.currencyCode,
+            method,
+            payoutDetails: payoutDetails as Prisma.InputJsonValue,
+            note,
+            status: 'SUBMITTED',
+            idempotencyKey,
+          },
+        });
+        await tx.walletLedgerEntry.create({
+          data: {
+            userId,
+            kind: 'RESERVE',
+            status: 'PENDING',
+            amountMinor,
+            currencyCode: totals.currencyCode,
+            sourceType: 'WALLET_WITHDRAW_REQUEST',
+            sourceId: request.id,
+            note: note ?? 'Wallet withdrawal requested',
+            idempotencyKey: `wallet-withdraw-reserve:${request.id}`,
+          },
+        });
+        await this.syncWalletBalanceFromLedgerTx(tx, userId);
+        return request;
+      });
+      return {
+        id: created.id,
+        amount: minorUnitsToDecimalString(created.amountMinor),
+        method: created.method,
+        status: created.status,
+        createdAt: created.createdAt,
+      };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const existing = await this.prisma.walletWithdrawRequest.findUnique({
+          where: { idempotencyKey },
+        });
+        if (existing) {
+          return {
+            id: existing.id,
+            amount: minorUnitsToDecimalString(existing.amountMinor),
+            method: existing.method,
+            status: existing.status,
+            createdAt: existing.createdAt,
+          };
+        }
+      }
+      throw error;
+    }
+  }
+
+  async cancelWalletWithdrawRequest(
+    userId: number,
+    requestId: number,
+  ): Promise<Record<string, unknown>> {
+    await this.seedReady;
+    const request = await this.prisma.walletWithdrawRequest.findUnique({
+      where: { id: requestId },
+    });
+    if (!request || request.userId !== userId) {
+      throw new FundraisingContractError('NOT_FOUND', 'Withdrawal request not found', 404);
+    }
+    if (!['SUBMITTED', 'UNDER_REVIEW'].includes(request.status)) {
+      throw new FundraisingContractError(
+        'INVALID_TRANSITION',
+        'Withdrawal request can no longer be cancelled',
+        409,
+      );
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.walletWithdrawRequest.update({
+        where: { id: requestId },
+        data: {
+          status: 'CANCELLED',
+          failureReason: request.failureReason ?? 'Cancelled by user',
+          processedAt: this.now(),
+        },
+      });
+      await tx.walletLedgerEntry.create({
+        data: {
+          userId,
+          kind: 'RELEASE',
+          status: 'POSTED',
+          amountMinor: request.amountMinor,
+          currencyCode: request.currencyCode,
+          sourceType: 'WALLET_WITHDRAW_REQUEST',
+          sourceId: request.id,
+          note: 'Reserved funds released after withdrawal cancellation',
+          idempotencyKey: `wallet-withdraw-release:${request.id}`,
+        },
+      });
+      await this.syncWalletBalanceFromLedgerTx(tx, userId);
+    });
+    return { cancelled: true, id: requestId };
+  }
+
   private principalForUser(userId: number): AuthenticatedPrincipal {
     return {
       sub: String(userId),
@@ -4461,6 +4925,32 @@ function parseMoneyMinor(value: unknown, field: string): bigint {
     throw new FundraisingContractError('VALIDATION', `${field} must be an integer`, 422);
   }
   return BigInt(text);
+}
+
+function minorUnitsToDecimalString(value: bigint): string {
+  const negative = value < 0n;
+  const absolute = negative ? value * -1n : value;
+  const major = absolute / 100n;
+  const minor = absolute % 100n;
+  return `${negative ? '-' : ''}${major}.${minor.toString().padStart(2, '0')}`;
+}
+
+function decimalToMinorUnits(value: Prisma.Decimal | string | number): bigint {
+  const text =
+    value instanceof Prisma.Decimal
+      ? value.toFixed(2)
+      : typeof value === 'number'
+        ? value.toFixed(2)
+        : String(value);
+  const normalized = text.trim();
+  const match = normalized.match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
+  if (!match) {
+    throw new FundraisingContractError('VALIDATION', 'Wallet balance is malformed', 500);
+  }
+  const [, sign, whole, fraction = ''] = match;
+  const minorText = `${whole}${fraction.padEnd(2, '0')}`;
+  const parsed = BigInt(minorText);
+  return sign === '-' ? parsed * -1n : parsed;
 }
 
 function normalizeDonationStatus(raw: string): FundraisingDonationStatus {

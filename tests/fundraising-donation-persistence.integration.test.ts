@@ -94,6 +94,9 @@ describe('fundraising donation persistence', () => {
 
   async function cleanupFundraisingRows(): Promise<void> {
     const prisma = getTestPrisma();
+    await prisma.walletLedgerEntry.deleteMany({});
+    await prisma.walletWithdrawRequest.deleteMany({});
+    await prisma.wallet.updateMany({ data: { balance: '0.00' } });
     await prisma.fundraisingWebhookEvent.deleteMany({});
     await prisma.fundraisingReceipt.deleteMany({ where: { donationId: { gt: 1 } } });
     await prisma.fundraisingPaymentAttempt.deleteMany({ where: { donationId: { gt: 1 } } });
@@ -389,6 +392,137 @@ describe('fundraising donation persistence', () => {
       .set('Authorization', 'Bearer token-1');
     expect(campaign.body.data.stats.raisedAmount).toBe('24000');
     expect(campaign.body.data.stats.donorsCount).toBe(1);
+  });
+
+  it('credits the owner wallet exactly once after a settled donation and exposes it through wallet endpoints', async () => {
+    const { app } = buildApp();
+    const campaignId = await createCampaign(app);
+
+    const donation = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${campaignId}/donate`)
+      .set('Authorization', 'Bearer token-2')
+      .set('Idempotency-Key', 'wallet-credit-on-settlement')
+      .send({
+        amount: '24000',
+        currencyCode: 'BDT',
+        returnUrl: 'https://app.example/return',
+        cancelUrl: 'https://app.example/cancel',
+      });
+    expect(donation.status).toBe(200);
+
+    const payload = {
+      provider: 'mockpay',
+      eventId: 'evt-wallet-credit-1',
+      referenceId: donation.body.data.donationIntent.referenceId,
+      status: 'SUCCEEDED',
+      amountMinor: '24000',
+      currencyCode: 'BDT',
+      providerPaymentId: 'pay-wallet-credit-1',
+    };
+    const signature = webhookSignature({ ...payload, payload });
+    await request(app)
+      .post('/api/v1/fundraising/payments/webhooks/provider')
+      .set('X-Furtail-Signature', signature)
+      .send(payload)
+      .expect(200);
+
+    await request(app)
+      .post('/api/v1/fundraising/payments/webhooks/provider')
+      .set('X-Furtail-Signature', signature)
+      .send(payload)
+      .expect(200);
+
+    const wallet = await request(app)
+      .get('/api/v1/wallet/me')
+      .set('Authorization', 'Bearer token-1');
+    expect(wallet.status).toBe(200);
+    expect(wallet.body.data.currency).toBe('BDT');
+    expect(wallet.body.data.balance).toBe('240.00');
+    expect(wallet.body.data.availableBalance).toBe('240.00');
+    expect(wallet.body.data.pendingBalance).toBe('0.00');
+    expect(wallet.body.data.lockedBalance).toBe('0.00');
+
+    const transactions = await request(app)
+      .get('/api/v1/wallet/transactions')
+      .set('Authorization', 'Bearer token-1');
+    expect(transactions.status).toBe(200);
+    expect(transactions.body.data.items).toHaveLength(1);
+    expect(transactions.body.data.items[0].type).toBe('CREDIT');
+    expect(transactions.body.data.items[0].status).toBe('POSTED');
+    expect(transactions.body.data.items[0].amount).toBe('240.00');
+    expect(transactions.body.data.items[0].sourceType).toBe('FUNDRAISING_DONATION');
+
+    const ledgerCount = await getTestPrisma().walletLedgerEntry.count({
+      where: {
+        userId: 1,
+        sourceType: 'FUNDRAISING_DONATION',
+        sourceId: donation.body.data.donationIntent.id as number,
+      },
+    });
+    expect(ledgerCount).toBe(1);
+  });
+
+  it('blocks wallet withdrawals for non-verified accounts and allows a verified wallet-only withdrawal request', async () => {
+    const { app } = buildApp();
+
+    await request(app)
+      .patch('/api/v1/fundraising/account')
+      .set('Authorization', 'Bearer token-2')
+      .send({ fullName: 'Pending Wallet User' })
+      .expect(200);
+
+    await getTestPrisma().fundraisingVerificationAccount.update({
+      where: { ownerUserId: 2 },
+      data: { status: 'PENDING' },
+    });
+
+    const blocked = await request(app)
+      .post('/api/v1/wallet/withdraw/requests')
+      .set('Authorization', 'Bearer token-2')
+      .send({
+        amount: 1000,
+        method: 'BKASH',
+        payoutDetails: { walletNumber: '01700000000' },
+      });
+    expect(blocked.status).toBe(403);
+
+    await getTestPrisma().walletLedgerEntry.create({
+      data: {
+        userId: 1,
+        kind: 'CREDIT',
+        status: 'POSTED',
+        amountMinor: 5000n,
+        currencyCode: 'BDT',
+        sourceType: 'MANUAL_ADJUSTMENT',
+        sourceId: 1,
+        note: 'Seeded wallet funds for withdrawal test',
+        idempotencyKey: 'test-wallet-balance',
+      },
+    });
+
+    await getTestPrisma().fundraisingVerificationAccount.update({
+      where: { ownerUserId: 1 },
+      data: { status: 'VERIFIED' },
+    });
+
+    const created = await request(app)
+      .post('/api/v1/wallet/withdraw/requests')
+      .set('Authorization', 'Bearer token-1')
+      .set('Idempotency-Key', 'wallet-withdraw-verified-1')
+      .send({
+        amount: 1200,
+        method: 'BKASH',
+        payoutDetails: { walletNumber: '01711111111' },
+      });
+    expect(created.status).toBe(201);
+    expect(created.body.data.status).toBe('SUBMITTED');
+
+    const wallet = await request(app)
+      .get('/api/v1/wallet/me')
+      .set('Authorization', 'Bearer token-1');
+    expect(wallet.status).toBe(200);
+    expect(wallet.body.data.availableBalance).toBe('38.00');
+    expect(wallet.body.data.lockedBalance).toBe('12.00');
   });
 
   it('persists receipts durably and returns them through the public donation status response', async () => {

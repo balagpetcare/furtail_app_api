@@ -20,6 +20,8 @@ import { locationsRoutes } from './locations.routes';
 import type { LocationRoutesDeps } from './locations.routes';
 import { animalTaxonomyRoutes } from './animal-taxonomy.routes';
 import type { AnimalTaxonomyRoutesDeps } from './animal-taxonomy.routes';
+import { walletRoutes } from './wallet.routes';
+import type { WalletRoutesDeps } from './wallet.routes';
 
 /**
  * Root route aggregator. Business-module routers (posts, profile, pets,
@@ -37,7 +39,8 @@ export interface RootRouterDeps
     FundraisingRoutesDeps,
     AdoptionRoutesDeps,
     LocationRoutesDeps,
-    AnimalTaxonomyRoutesDeps {}
+    AnimalTaxonomyRoutesDeps,
+    WalletRoutesDeps {}
 
 export function rootRouter(deps: RootRouterDeps): Router {
   const router = Router();
@@ -48,6 +51,7 @@ export function rootRouter(deps: RootRouterDeps): Router {
   router.use(reportsRoutes(deps));
   router.use(petRoutes(deps));
   router.use(fundraisingRoutes(deps));
+  router.use(walletRoutes(deps));
   router.use(adoptionRoutes(deps));
   router.use(locationsRoutes(deps));
   router.use(animalTaxonomyRoutes(deps));

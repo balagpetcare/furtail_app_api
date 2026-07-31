@@ -23,6 +23,9 @@ describe('fundraising contracts', () => {
   // idempotently recreates the id-1 seed fixture immediately after.
   beforeEach(async () => {
     const prisma = getTestPrisma();
+    await prisma.walletLedgerEntry.deleteMany({});
+    await prisma.walletWithdrawRequest.deleteMany({});
+    await prisma.wallet.updateMany({ data: { balance: '0.00' } });
     await prisma.fundraisingWebhookEvent.deleteMany({});
     await prisma.fundraisingReceipt.deleteMany({ where: { donationId: { gt: 1 } } });
     await prisma.fundraisingPaymentAttempt.deleteMany({ where: { donationId: { gt: 1 } } });
@@ -608,6 +611,71 @@ describe('fundraising contracts', () => {
       data: { status: 'VERIFIED' },
     });
     await expect(fundraisingStore.assertCanWithdrawFunds(2)).resolves.toBeUndefined();
+  });
+
+  it('blocks suspended and deactivated accounts from creating new campaigns and collecting new donations', async () => {
+    const { app } = buildApp();
+
+    await request(app)
+      .patch('/api/v1/fundraising/account')
+      .set('Authorization', 'Bearer token-2')
+      .send({ fullName: 'Deactivated Owner' })
+      .expect(200);
+
+    await getTestPrisma().fundraisingVerificationAccount.update({
+      where: { ownerUserId: 2 },
+      data: { status: 'DEACTIVATED' },
+    });
+
+    const blockedDraft = await request(app)
+      .post('/api/v1/fundraising/campaigns/drafts')
+      .set('Authorization', 'Bearer token-2')
+      .send({
+        title: 'Blocked fundraiser',
+        caption: 'Should not be created',
+        category: 'PET_HEALTH',
+        fundingMode: 'ONE_TIME',
+        currencyCode: 'BDT',
+        targetAmountMinor: '50000',
+        beneficiaryType: 'PET',
+        beneficiaryName: 'Milo',
+        locationText: 'Dhaka',
+        deadline: '2026-12-31T00:00:00.000Z',
+      });
+    expect(blockedDraft.status).toBe(403);
+
+    const campaign = await request(app)
+      .post('/api/v1/fundraising/campaigns')
+      .set('Authorization', 'Bearer token-1')
+      .send({
+        title: 'Suspended owner campaign',
+        caption: 'Accepting donations until suspended',
+        category: 'PET_HEALTH',
+        fundingMode: 'ONE_TIME',
+        currencyCode: 'BDT',
+        targetAmountMinor: '90000',
+        beneficiaryType: 'PET',
+        beneficiaryName: 'Luna',
+        deadline: '2026-12-31T00:00:00.000Z',
+      });
+    expect(campaign.status).toBe(201);
+
+    await getTestPrisma().fundraisingVerificationAccount.update({
+      where: { ownerUserId: 1 },
+      data: { status: 'SUSPENDED' },
+    });
+
+    const blockedDonation = await request(app)
+      .post(`/api/v1/fundraising/campaigns/${campaign.body.data.id}/donate`)
+      .set('Authorization', 'Bearer token-2')
+      .set('Idempotency-Key', 'suspended-owner-donation')
+      .send({
+        amount: '10000',
+        currencyCode: 'BDT',
+        returnUrl: 'https://app.example/return',
+        cancelUrl: 'https://app.example/cancel',
+      });
+    expect(blockedDonation.status).toBe(422);
   });
 
   it('treats body idempotency keys as submit idempotency for mobile clients', async () => {

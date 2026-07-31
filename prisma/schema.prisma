@@ -7,30 +7,32 @@ datasource db {
 }
 
 model User {
-  id                              Int                   @id @default(autoincrement())
-  createdAt                       DateTime              @default(now())
-  updatedAt                       DateTime              @updatedAt
-  friendRequestsSent              FriendRequest[]       @relation("FriendRequestSender")
-  friendRequestsReceived          FriendRequest[]       @relation("FriendRequestRecipient")
-  uploadedMedia                   Media[]               @relation("MediaOwner")
-  authoredPosts                   Post[]                @relation("PostAuthor")
-  postBookmarks                   PostBookmark[]        @relation("PostBookmarkedBy")
-  authoredComments                PostComment[]         @relation("CommentAuthor")
-  commentLikes                    PostCommentLike[]     @relation("CommentLikedBy")
-  postLikes                       PostLike[]            @relation("PostLikedBy")
-  postShares                      PostShare[]           @relation("PostSharedBy")
-  postViews                       PostView[]            @relation("PostViewedBy")
-  blocksReceived                  UserBlock[]           @relation("UserBlocked")
-  blocksGiven                     UserBlock[]           @relation("UserBlocker")
+  id                              Int                     @id @default(autoincrement())
+  createdAt                       DateTime                @default(now())
+  updatedAt                       DateTime                @updatedAt
+  friendRequestsSent              FriendRequest[]         @relation("FriendRequestSender")
+  friendRequestsReceived          FriendRequest[]         @relation("FriendRequestRecipient")
+  uploadedMedia                   Media[]                 @relation("MediaOwner")
+  authoredPosts                   Post[]                  @relation("PostAuthor")
+  postBookmarks                   PostBookmark[]          @relation("PostBookmarkedBy")
+  authoredComments                PostComment[]           @relation("CommentAuthor")
+  commentLikes                    PostCommentLike[]       @relation("CommentLikedBy")
+  postLikes                       PostLike[]              @relation("PostLikedBy")
+  postShares                      PostShare[]             @relation("PostSharedBy")
+  postViews                       PostView[]              @relation("PostViewedBy")
+  blocksReceived                  UserBlock[]             @relation("UserBlocked")
+  blocksGiven                     UserBlock[]             @relation("UserBlocker")
   centralAuthLink                 UserCentralAuthLink?
-  following                       UserFollow[]          @relation("UserFollowing")
-  followers                       UserFollow[]          @relation("UserFollowers")
+  following                       UserFollow[]            @relation("UserFollowing")
+  followers                       UserFollow[]            @relation("UserFollowers")
   profile                         UserProfile?
-  profileLikesGiven               UserProfileLike[]     @relation("ProfileLikeActor")
-  profileLikesReceived            UserProfileLike[]     @relation("ProfileLikeTarget")
+  profileLikesGiven               UserProfileLike[]       @relation("ProfileLikeActor")
+  profileLikesReceived            UserProfileLike[]       @relation("ProfileLikeTarget")
   wallet                          Wallet?
-  adoptionApplicationsAsApplicant AdoptionApplication[] @relation("AdoptionApplicationApplicant")
-  adoptionApplicationsAsOwner     AdoptionApplication[] @relation("AdoptionApplicationOwner")
+  walletLedgerEntries             WalletLedgerEntry[]
+  walletWithdrawRequests          WalletWithdrawRequest[]
+  adoptionApplicationsAsApplicant AdoptionApplication[]   @relation("AdoptionApplicationApplicant")
+  adoptionApplicationsAsOwner     AdoptionApplication[]   @relation("AdoptionApplicationOwner")
   adoptionListings                AdoptionListing[]
 }
 
@@ -66,6 +68,50 @@ model Wallet {
   balance Decimal @db.Decimal(18, 2)
   tier    String?
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WalletLedgerEntry {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  kind           String
+  status         String
+  amountMinor    BigInt
+  currencyCode   String    @default("BDT")
+  sourceType     String?
+  sourceId       Int?
+  note           String?
+  idempotencyKey String?
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+  postedAt       DateTime?
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([sourceType, sourceId])
+  @@map("wallet_ledger_entries")
+}
+
+model WalletWithdrawRequest {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  amountMinor    BigInt
+  currencyCode   String    @default("BDT")
+  method         String
+  payoutDetails  Json
+  note           String?
+  status         String
+  failureReason  String?
+  idempotencyKey String    @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  reviewedAt     DateTime?
+  processedAt    DateTime?
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, status, createdAt])
+  @@map("wallet_withdraw_requests")
 }
 
 model UserProfile {
@@ -822,6 +868,8 @@ enum FundraisingVerificationStatus {
   PENDING
   VERIFIED
   REJECTED
+  SUSPENDED
+  DEACTIVATED
 }
 
 enum FundraisingVerificationDocumentType {

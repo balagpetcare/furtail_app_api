@@ -21,26 +21,42 @@ describe('fundraising verification policy', () => {
     { status: 'UNDER_REVIEW' },
     { status: 'REQUIRES_UPDATE' },
     { status: 'REJECTED' },
+    { status: 'SUSPENDED' },
+    { status: 'DEACTIVATED' },
   ];
 
   describe('campaign create/submit', () => {
-    it.each(nonApprovedStates)('is allowed for %j', (account) => {
+    it.each(nonApprovedStates.slice(0, -2))('is allowed for %j', (account) => {
       expect(canCreateOrSubmitCampaign(account)).toBe(true);
     });
 
     it('is allowed for an approved account', () => {
       expect(canCreateOrSubmitCampaign({ status: 'VERIFIED' })).toBe(true);
     });
+
+    it.each([{ status: 'SUSPENDED' }, { status: 'DEACTIVATED' }])(
+      'is blocked for %j',
+      (account) => {
+        expect(canCreateOrSubmitCampaign(account)).toBe(false);
+      },
+    );
   });
 
   describe('donation acceptance', () => {
-    it.each(nonApprovedStates)('is allowed for %j', (account) => {
+    it.each(nonApprovedStates.slice(0, -2))('is allowed for %j', (account) => {
       expect(canReceiveDonations(account)).toBe(true);
     });
 
     it('is allowed for an approved account', () => {
       expect(canReceiveDonations({ status: 'VERIFIED' })).toBe(true);
     });
+
+    it.each([{ status: 'SUSPENDED' }, { status: 'DEACTIVATED' }])(
+      'is blocked for %j',
+      (account) => {
+        expect(canReceiveDonations(account)).toBe(false);
+      },
+    );
   });
 
   describe('withdrawal', () => {
