@@ -2,6 +2,10 @@ import { Prisma } from '@prisma/client';
 import type { AuthenticatedPrincipal } from '../../security/principal';
 import { logger } from '../../shared/logger';
 import { getPrisma } from '../../infrastructure/db/prisma-client';
+import {
+  buildProvisionedProfileSeed,
+  sanitizePublicDisplayName,
+} from '../profile/shared-user-profile';
 
 export interface UserProfile {
   id: number;
@@ -130,18 +134,23 @@ export async function getOrProvisionUser(principal: AuthenticatedPrincipal): Pro
       }
 
       // Create profile with generated username
-      const username = generateUsername(email || principal.name || subject);
-      const displayName = principal.name || email || username;
+      const seed = buildProvisionedProfileSeed({
+        subject,
+        principalName: principal.name,
+      });
 
       const profile = await tx.userProfile.create({
         data: {
           userId: newUser.id,
-          username,
-          displayName,
+          username: seed.username,
+          displayName: seed.displayName,
         },
       });
 
-      logger.debug({ userId: newUser.id, username, subject }, '[auth] JIT provisioned new user');
+      logger.debug(
+        { userId: newUser.id, username: seed.username, subject },
+        '[auth] JIT provisioned new user',
+      );
 
       return { user: newUser, profile, userAuth };
     });
@@ -175,15 +184,69 @@ export async function getOrProvisionUser(principal: AuthenticatedPrincipal): Pro
   }
 }
 
-function generateUsername(baseString: string): string {
-  const base =
-    baseString
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '')
-      .substring(0, 20) || 'user';
+export async function getOrProvisionUserByCentralSubjectOnly(
+  principal: AuthenticatedPrincipal,
+): Promise<UserProfile> {
+  const subject = principal.sub;
+  const client = getPrisma();
 
-  const timestamp = Date.now().toString().slice(-6);
-  return `${base}${timestamp}`.substring(0, 30);
+  const existingLink = await client.userCentralAuthLink.findUnique({
+    where: { subject },
+    include: { user: { include: { profile: true } } },
+  });
+
+  if (existingLink) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return formatUserProfile(existingLink.user as any, null);
+  }
+
+  try {
+    const result = await client.$transaction(async (tx) => {
+      const newUser = await tx.user.create({ data: {} });
+
+      await tx.userCentralAuthLink.create({
+        data: {
+          userId: newUser.id,
+          subject,
+          linkMethod: 'jit_subject_only',
+        },
+      });
+
+      const seed = buildProvisionedProfileSeed({
+        subject,
+        principalName: principal.name,
+      });
+      const profile = await tx.userProfile.create({
+        data: {
+          userId: newUser.id,
+          username: seed.username,
+          displayName: seed.displayName,
+        },
+      });
+
+      logger.debug(
+        { userId: newUser.id, subject },
+        '[auth] JIT provisioned subject-only user for pet ownership',
+      );
+
+      return { user: newUser, profile };
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return formatUserProfile(result.user as any, null);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const link = await client.userCentralAuthLink.findUnique({
+        where: { subject },
+        include: { user: { include: { profile: true } } },
+      });
+      if (link) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return formatUserProfile(link.user as any, null);
+      }
+    }
+    throw error;
+  }
 }
 
 function formatUserProfile(
@@ -199,7 +262,10 @@ function formatUserProfile(
     id: user.id,
     email: userAuth?.email || undefined,
     phone: userAuth?.phone || undefined,
-    name: (profile.displayName || profile.username || userAuth?.email) as string | undefined,
+    name: sanitizePublicDisplayName({
+      displayName: profile.displayName ?? undefined,
+      username: profile.username ?? undefined,
+    }),
     displayName: (profile.displayName || undefined) as string | undefined,
     username: (profile.username || undefined) as string | undefined,
     avatarUrl: (profile.avatarUrl || undefined) as string | undefined,

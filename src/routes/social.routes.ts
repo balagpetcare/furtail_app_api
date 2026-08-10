@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import type { PrismaClient } from '@prisma/client';
 
 import { sendSuccess } from '../core/http/api-response';
 import { AppError } from '../core/errors/app-error';
@@ -12,10 +13,23 @@ import {
 } from '../modules/media/media-storage';
 import { createSocialCoreStore, type SocialCoreStore } from '../modules/social/social-store';
 import { extname } from 'node:path';
+import { env } from '../config/env';
+import { getPrisma } from '../infrastructure/db/prisma-client';
+import {
+  getSharedProfileByUsername,
+  getSharedProfileForUser,
+  updateSharedProfile,
+} from '../modules/profile/shared-user-profile';
 
 export interface SocialRoutesDeps {
   verifier: TokenVerifier;
   socialStore?: SocialCoreStore;
+  // Explicit override so tests (and any future caller) can force
+  // Prisma-backed enforcement without relying on the module-global
+  // env.DATABASE_URL, which tests/setup-env.ts freezes empty for the whole
+  // Jest process. Falls back to the env.DATABASE_URL-gated getPrisma()
+  // singleton when omitted, unchanged for the real running server.
+  prisma?: PrismaClient | null;
 }
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -55,6 +69,33 @@ const upload = multer({
     callback(null, true);
   },
 });
+
+// Hydrates the in-memory store's shadow record for an ACTION TARGET (not
+// the requesting viewer, who is already hydrated by readUserId/
+// resolveUserId) before a follow/mute/restrict/block call — every one of
+// those in-memory store methods requires mustGetUser(targetId) to succeed.
+// A real long-running server accumulates every user's shadow over time
+// from any request that touches them; a cold test process (or the very
+// first action ever taken against a given target) has none yet, so this
+// closes that gap using the real Prisma row when available.
+async function ensureTargetKnown(
+  prisma: PrismaClient | null,
+  store: SocialCoreStore,
+  targetId: number,
+): Promise<void> {
+  if (!prisma) return;
+  const target = await prisma.userProfile.findUnique({
+    where: { userId: targetId },
+    select: { displayName: true, username: true },
+  });
+  if (target) {
+    store.ensureUserKnown(targetId, {
+      id: targetId,
+      displayName: target.displayName,
+      username: target.username ?? undefined,
+    });
+  }
+}
 
 async function readUserId(
   req: { principal?: { sub: string; email?: string; name?: string } },
@@ -138,6 +179,9 @@ function toBoolean(value: unknown): boolean | undefined {
 }
 
 function mapError(error: unknown, fallbackMessage: string): AppError {
+  if (error instanceof AppError) {
+    return error;
+  }
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('Username already taken'))
     return AppError.conflict('Username already taken', { field: 'username' });
@@ -146,6 +190,8 @@ function mapError(error: unknown, fallbackMessage: string): AppError {
   if (message.includes('You cannot send a request to yourself'))
     return AppError.validation(message);
   if (message.includes('You cannot block yourself')) return AppError.validation(message);
+  if (message.includes('You cannot mute yourself')) return AppError.validation(message);
+  if (message.includes('You cannot restrict yourself')) return AppError.validation(message);
   if (message.includes('Forbidden')) return AppError.authorizationDenied('Forbidden');
   if (message.includes('not found')) return AppError.notFound(message);
   if (message.includes('pending')) return AppError.validation(message);
@@ -158,6 +204,7 @@ function mapError(error: unknown, fallbackMessage: string): AppError {
 export function socialRoutes(deps: SocialRoutesDeps): Router {
   const router = Router();
   const store = deps.socialStore ?? createSocialCoreStore(new InMemoryMediaStorageAdapter());
+  const prisma = deps.prisma !== undefined ? deps.prisma : env.DATABASE_URL ? getPrisma() : null;
   const required = requiredAuth({ verifier: deps.verifier });
   const optional = optionalAuth({ verifier: deps.verifier });
 
@@ -166,7 +213,10 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     required,
     asyncHandler(async (req, res) => {
       const userId = await readUserId(req, store);
-      sendSuccess(res, store.getCurrentUserPayload(userId), {
+      const payload = prisma
+        ? await getSharedProfileForUser(prisma, userId, userId, true)
+        : store.getCurrentUserPayload(userId);
+      sendSuccess(res, payload, {
         requestId: req.requestId,
         correlationId: req.correlationId,
       });
@@ -178,7 +228,10 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     required,
     asyncHandler(async (req, res) => {
       const userId = await readUserId(req, store);
-      sendSuccess(res, store.getCurrentUserPayload(userId), {
+      const payload = prisma
+        ? await getSharedProfileForUser(prisma, userId, userId, true)
+        : store.getCurrentUserPayload(userId);
+      sendSuccess(res, payload, {
         requestId: req.requestId,
         correlationId: req.correlationId,
       });
@@ -191,25 +244,157 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     asyncHandler(async (req, res) => {
       const userId = await readUserId(req, store);
       try {
-        const payload = store.updateCurrentUserProfile(userId, {
-          displayName: req.body?.displayName,
-          username: req.body?.username,
-          bio: req.body?.bio,
-          visibility: req.body?.visibility,
-          showEmail: req.body?.showEmail,
-          showPhone: req.body?.showPhone,
-          avatarMediaId:
-            toOptionalPositiveInt(req.body?.avatarMediaId) ??
-            (req.body?.avatarMediaId === null ? null : undefined),
-          coverMediaId:
-            toOptionalPositiveInt(req.body?.coverMediaId) ??
-            (req.body?.coverMediaId === null ? null : undefined),
-          email: req.body?.email,
-          phone: req.body?.phone,
-        });
+        const payload = prisma
+          ? await updateSharedProfile(prisma, userId, {
+              displayName: req.body?.displayName,
+              username: req.body?.username,
+              bio: req.body?.bio,
+              visibility: req.body?.visibility,
+              showEmail: req.body?.showEmail,
+              showPhone: req.body?.showPhone,
+              education: req.body?.education,
+              placeLive: req.body?.placeLive,
+              from: req.body?.from,
+              profileType: req.body?.profileType,
+              workStatus: req.body?.workStatus,
+              religiousStatus: req.body?.religiousStatus,
+              gender: req.body?.gender,
+              maritalStatus: req.body?.maritalStatus,
+              followersVisibility: req.body?.followersVisibility,
+              followingVisibility: req.body?.followingVisibility,
+              discoverableByEmail: req.body?.discoverableByEmail,
+              discoverableByPhone: req.body?.discoverableByPhone,
+              discoverableBySearch: req.body?.discoverableBySearch,
+              whoCanFollow: req.body?.whoCanFollow,
+              whoCanMessage: req.body?.whoCanMessage,
+              whoCanComment: req.body?.whoCanComment,
+              whoCanMention: req.body?.whoCanMention,
+              whoCanTag: req.body?.whoCanTag,
+              requiresTagReview: req.body?.requiresTagReview,
+              requiresProfilePostReview: req.body?.requiresProfilePostReview,
+              showActivityStatus: req.body?.showActivityStatus,
+              showReadReceipts: req.body?.showReadReceipts,
+              avatarMediaId:
+                toOptionalPositiveInt(req.body?.avatarMediaId) ??
+                (req.body?.avatarMediaId === null ? null : undefined),
+              coverMediaId:
+                toOptionalPositiveInt(req.body?.coverMediaId) ??
+                (req.body?.coverMediaId === null ? null : undefined),
+            })
+          : store.updateCurrentUserProfile(userId, {
+              displayName: req.body?.displayName,
+              username: req.body?.username,
+              bio: req.body?.bio,
+              visibility: req.body?.visibility,
+              showEmail: req.body?.showEmail,
+              showPhone: req.body?.showPhone,
+              education: req.body?.education,
+              placeLive: req.body?.placeLive,
+              from: req.body?.from,
+              profileType: req.body?.profileType,
+              workStatus: req.body?.workStatus,
+              religiousStatus: req.body?.religiousStatus,
+              gender: req.body?.gender,
+              maritalStatus: req.body?.maritalStatus,
+              avatarMediaId:
+                toOptionalPositiveInt(req.body?.avatarMediaId) ??
+                (req.body?.avatarMediaId === null ? null : undefined),
+              coverMediaId:
+                toOptionalPositiveInt(req.body?.coverMediaId) ??
+                (req.body?.coverMediaId === null ? null : undefined),
+              email: req.body?.email,
+              phone: req.body?.phone,
+            });
         sendSuccess(res, payload, { requestId: req.requestId, correlationId: req.correlationId });
       } catch (error) {
         throw mapError(error, 'Failed to update profile');
+      }
+    }),
+  );
+
+  const DEFAULT_NOTIFICATION_PREFERENCES = {
+    likes: true,
+    comments: true,
+    follows: true,
+    mentions: true,
+    messages: true,
+    fundraisingUpdates: true,
+    adoptionUpdates: true,
+    emailAnnouncements: false,
+    smsAnnouncements: false,
+  };
+
+  router.get(
+    '/api/v1/user/me/notification-preferences',
+    required,
+    asyncHandler(async (req, res) => {
+      const userId = await readUserId(req, store);
+      if (prisma) {
+        const profile = await prisma.userProfile.findUnique({
+          where: { userId },
+          select: { notificationPreferences: true },
+        });
+        const stored =
+          profile?.notificationPreferences &&
+          typeof profile.notificationPreferences === 'object' &&
+          !Array.isArray(profile.notificationPreferences)
+            ? (profile.notificationPreferences as Record<string, unknown>)
+            : {};
+        sendSuccess(
+          res,
+          { ...DEFAULT_NOTIFICATION_PREFERENCES, ...stored },
+          { requestId: req.requestId, correlationId: req.correlationId },
+        );
+      } else {
+        const prefs = store.getNotificationPreferences(userId);
+        sendSuccess(
+          res,
+          { ...DEFAULT_NOTIFICATION_PREFERENCES, emailAnnouncements: prefs.allowEmail, smsAnnouncements: prefs.allowSms },
+          { requestId: req.requestId, correlationId: req.correlationId },
+        );
+      }
+    }),
+  );
+
+  router.patch(
+    '/api/v1/user/me/notification-preferences',
+    required,
+    asyncHandler(async (req, res) => {
+      const userId = await readUserId(req, store);
+      const allowedKeys = Object.keys(DEFAULT_NOTIFICATION_PREFERENCES);
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const updates: Record<string, boolean> = {};
+      for (const key of allowedKeys) {
+        if (typeof body[key] === 'boolean') updates[key] = body[key];
+      }
+      if (prisma) {
+        const existing = await prisma.userProfile.findUnique({
+          where: { userId },
+          select: { notificationPreferences: true },
+        });
+        const stored =
+          existing?.notificationPreferences &&
+          typeof existing.notificationPreferences === 'object' &&
+          !Array.isArray(existing.notificationPreferences)
+            ? (existing.notificationPreferences as Record<string, unknown>)
+            : {};
+        const merged = { ...DEFAULT_NOTIFICATION_PREFERENCES, ...stored, ...updates };
+        await prisma.userProfile.update({
+          where: { userId },
+          data: { notificationPreferences: merged },
+        });
+        sendSuccess(res, merged, { requestId: req.requestId, correlationId: req.correlationId });
+      } else {
+        store.updateNotificationPreferences(userId, {
+          allowEmail: updates.emailAnnouncements,
+          allowSms: updates.smsAnnouncements,
+        });
+        const prefs = store.getNotificationPreferences(userId);
+        sendSuccess(
+          res,
+          { ...DEFAULT_NOTIFICATION_PREFERENCES, ...updates, emailAnnouncements: prefs.allowEmail, smsAnnouncements: prefs.allowSms },
+          { requestId: req.requestId, correlationId: req.correlationId },
+        );
       }
     }),
   );
@@ -317,9 +502,14 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     required,
     asyncHandler(async (req, res) => {
       const viewerId = await readUserId(req, store);
-      const user = store.getUserByUsername(String(req.params.username || ''));
-      if (!user) throw AppError.notFound('User not found');
-      sendSuccess(res, store.getVisitorUserPayload(viewerId, user.id), {
+      const payload = prisma
+        ? await getSharedProfileByUsername(prisma, String(req.params.username || ''), viewerId, false)
+        : (() => {
+            const user = store.getUserByUsername(String(req.params.username || ''));
+            if (!user) throw AppError.notFound('User not found');
+            return store.getVisitorUserPayload(viewerId, user.id);
+          })();
+      sendSuccess(res, payload, {
         requestId: req.requestId,
         correlationId: req.correlationId,
       });
@@ -332,8 +522,13 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     asyncHandler(async (req, res) => {
       const viewerId = await readUserId(req, store);
       const userId = toPositiveInt(req.params.userId, 'userId');
-      if (!store.getUserById(userId)) throw AppError.notFound('User not found');
-      sendSuccess(res, store.getVisitorUserPayload(viewerId, userId), {
+      const payload = prisma
+        ? await getSharedProfileForUser(prisma, userId, viewerId, false)
+        : (() => {
+            if (!store.getUserById(userId)) throw AppError.notFound('User not found');
+            return store.getVisitorUserPayload(viewerId, userId);
+          })();
+      sendSuccess(res, payload, {
         requestId: req.requestId,
         correlationId: req.correlationId,
       });
@@ -359,10 +554,21 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     required,
     asyncHandler(async (req, res) => {
       const viewerId = await readUserId(req, store);
-      sendSuccess(res, store.listBlockedUsers(viewerId), {
-        requestId: req.requestId,
-        correlationId: req.correlationId,
-      });
+      if (prisma) {
+        const blocks = await prisma.userBlock.findMany({
+          where: { blockerId: viewerId },
+          select: { blockedUserId: true },
+        });
+        sendSuccess(res, { items: blocks.map((b) => ({ userId: b.blockedUserId })) }, {
+          requestId: req.requestId,
+          correlationId: req.correlationId,
+        });
+      } else {
+        sendSuccess(res, store.listBlockedUsers(viewerId), {
+          requestId: req.requestId,
+          correlationId: req.correlationId,
+        });
+      }
     }),
   );
 
@@ -373,6 +579,14 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       const viewerId = await readUserId(req, store);
       const targetId = toPositiveInt(req.params.userId, 'userId');
       try {
+        if (prisma) {
+          await prisma.userBlock.upsert({
+            where: { blockerId_blockedUserId: { blockerId: viewerId, blockedUserId: targetId } },
+            create: { blockerId: viewerId, blockedUserId: targetId },
+            update: {},
+          });
+        }
+        await ensureTargetKnown(prisma, store, targetId);
         sendSuccess(res, store.blockUser(viewerId, targetId), {
           requestId: req.requestId,
           correlationId: req.correlationId,
@@ -389,6 +603,11 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     asyncHandler(async (req, res) => {
       const viewerId = await readUserId(req, store);
       const targetId = toPositiveInt(req.params.userId, 'userId');
+      if (prisma) {
+        await prisma.userBlock.deleteMany({
+          where: { blockerId: viewerId, blockedUserId: targetId },
+        });
+      }
       store.unblockUser(viewerId, targetId);
       sendSuccess(
         res,
@@ -401,6 +620,130 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     }),
   );
 
+  router.get(
+    '/api/v1/social/muted',
+    required,
+    asyncHandler(async (req, res) => {
+      const viewerId = await readUserId(req, store);
+      if (prisma) {
+        const mutes = await prisma.userMute.findMany({
+          where: { muterId: viewerId },
+          select: { mutedUserId: true },
+        });
+        sendSuccess(res, { items: mutes.map((m) => ({ userId: m.mutedUserId })) }, {
+          requestId: req.requestId,
+          correlationId: req.correlationId,
+        });
+      } else {
+        sendSuccess(res, { items: store.listMutedUsers(viewerId) }, {
+          requestId: req.requestId,
+          correlationId: req.correlationId,
+        });
+      }
+    }),
+  );
+
+  router.post(
+    '/api/v1/social/mute/:userId',
+    required,
+    asyncHandler(async (req, res) => {
+      const viewerId = await readUserId(req, store);
+      const targetId = toPositiveInt(req.params.userId, 'userId');
+      try {
+        if (prisma) {
+          await prisma.userMute.upsert({
+            where: { muterId_mutedUserId: { muterId: viewerId, mutedUserId: targetId } },
+            create: { muterId: viewerId, mutedUserId: targetId },
+            update: {},
+          });
+        }
+        await ensureTargetKnown(prisma, store, targetId);
+        store.muteUser(viewerId, targetId);
+        sendSuccess(res, { muted: true }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapError(error, 'Failed to mute user');
+      }
+    }),
+  );
+
+  router.delete(
+    '/api/v1/social/mute/:userId',
+    required,
+    asyncHandler(async (req, res) => {
+      const viewerId = await readUserId(req, store);
+      const targetId = toPositiveInt(req.params.userId, 'userId');
+      if (prisma) {
+        await prisma.userMute.deleteMany({
+          where: { muterId: viewerId, mutedUserId: targetId },
+        });
+      }
+      store.unmuteUser(viewerId, targetId);
+      sendSuccess(res, { muted: false }, { requestId: req.requestId, correlationId: req.correlationId });
+    }),
+  );
+
+  router.get(
+    '/api/v1/social/restricted',
+    required,
+    asyncHandler(async (req, res) => {
+      const viewerId = await readUserId(req, store);
+      if (prisma) {
+        const restrictions = await prisma.userRestrict.findMany({
+          where: { restricterId: viewerId },
+          select: { restrictedUserId: true },
+        });
+        sendSuccess(res, { items: restrictions.map((r) => ({ userId: r.restrictedUserId })) }, {
+          requestId: req.requestId,
+          correlationId: req.correlationId,
+        });
+      } else {
+        sendSuccess(res, { items: store.listRestrictedUsers(viewerId) }, {
+          requestId: req.requestId,
+          correlationId: req.correlationId,
+        });
+      }
+    }),
+  );
+
+  router.post(
+    '/api/v1/social/restrict/:userId',
+    required,
+    asyncHandler(async (req, res) => {
+      const viewerId = await readUserId(req, store);
+      const targetId = toPositiveInt(req.params.userId, 'userId');
+      try {
+        if (prisma) {
+          await prisma.userRestrict.upsert({
+            where: { restricterId_restrictedUserId: { restricterId: viewerId, restrictedUserId: targetId } },
+            create: { restricterId: viewerId, restrictedUserId: targetId },
+            update: {},
+          });
+        }
+        await ensureTargetKnown(prisma, store, targetId);
+        store.restrictUser(viewerId, targetId);
+        sendSuccess(res, { restricted: true }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapError(error, 'Failed to restrict user');
+      }
+    }),
+  );
+
+  router.delete(
+    '/api/v1/social/restrict/:userId',
+    required,
+    asyncHandler(async (req, res) => {
+      const viewerId = await readUserId(req, store);
+      const targetId = toPositiveInt(req.params.userId, 'userId');
+      if (prisma) {
+        await prisma.userRestrict.deleteMany({
+          where: { restricterId: viewerId, restrictedUserId: targetId },
+        });
+      }
+      store.unrestrictUser(viewerId, targetId);
+      sendSuccess(res, { restricted: false }, { requestId: req.requestId, correlationId: req.correlationId });
+    }),
+  );
+
   router.post(
     '/api/v1/social/follow/:userId',
     required,
@@ -408,6 +751,26 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       const viewerId = await readUserId(req, store);
       const targetId = toPositiveInt(req.params.userId, 'userId');
       try {
+        if (prisma && viewerId !== targetId) {
+          const target = await prisma.userProfile.findUnique({
+            where: { userId: targetId },
+            select: { whoCanFollow: true },
+          });
+          if (target?.whoCanFollow === 'NOBODY') {
+            throw AppError.authorizationDenied('This user is not accepting new followers');
+          }
+          if (target?.whoCanFollow === 'FOLLOWERS') {
+            const alreadyFollowedByTarget = await prisma.userFollow.findUnique({
+              where: { followerId_followingId: { followerId: targetId, followingId: viewerId } },
+            });
+            if (!alreadyFollowedByTarget) {
+              throw AppError.authorizationDenied(
+                'This user only accepts followers they already follow',
+              );
+            }
+          }
+        }
+        await ensureTargetKnown(prisma, store, targetId);
         store.followUser(viewerId, targetId);
         sendSuccess(
           res,
@@ -891,6 +1254,27 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       const viewerId = await readUserId(req, store);
       const postId = toPositiveInt(req.params.postId, 'postId');
       try {
+        if (prisma) {
+          const post = store.getPostById(viewerId, postId);
+          const authorId = (post.author as { id?: number })?.id;
+          if (authorId && authorId !== viewerId) {
+            const authorProfile = await prisma.userProfile.findUnique({
+              where: { userId: authorId },
+              select: { whoCanComment: true },
+            });
+            if (authorProfile?.whoCanComment === 'NOBODY') {
+              throw AppError.authorizationDenied('Comments are disabled on this post');
+            }
+            if (authorProfile?.whoCanComment === 'FOLLOWERS') {
+              const followsAuthor = await prisma.userFollow.findUnique({
+                where: { followerId_followingId: { followerId: viewerId, followingId: authorId } },
+              });
+              if (!followsAuthor) {
+                throw AppError.authorizationDenied('Only followers can comment on this post');
+              }
+            }
+          }
+        }
         sendSuccess(res, store.addComment(viewerId, postId, String(req.body?.text ?? '').trim()), {
           requestId: req.requestId,
           correlationId: req.correlationId,

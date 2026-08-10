@@ -445,4 +445,124 @@ describe('fundraiser visibility and authorization policy', () => {
     );
     expect(item?.donationAllowed).toBe(true);
   });
+
+  it('keeps the public feed available when a campaign owner profile row is missing', async () => {
+    const { app } = buildApp();
+    await request(app).get('/api/v1/fundraising/feed');
+    await getTestPrisma().fundraisingCampaign.update({
+      where: { id: PUBLIC_CAMPAIGN_ID },
+      data: { ownerUserId: 999999 },
+    });
+
+    const feed = await request(app).get('/api/v1/fundraising/feed?limit=20&sort=ENDING_SOON');
+
+    expect(feed.status).toBe(200);
+    const item = (feed.body.data.items as Array<{ id: number; author: { id: number } }>).find(
+      (campaign) => campaign.id === PUBLIC_CAMPAIGN_ID,
+    );
+    expect(item).toBeDefined();
+  });
+
+  it.each(['SUSPENDED', 'DEACTIVATED'])(
+    'excludes %s-account campaigns from the public feed and detail route',
+    async (accountStatus) => {
+      const { app } = buildApp();
+      await request(app).get('/api/v1/fundraising/feed');
+      await getTestPrisma().fundraisingVerificationAccount.update({
+        where: { ownerUserId: 1 },
+        data: { status: accountStatus as 'SUSPENDED' | 'DEACTIVATED' },
+      });
+
+      const feed = await request(app).get('/api/v1/fundraising/feed');
+      expect(feed.status).toBe(200);
+      expect(
+        (feed.body.data.items as Array<{ id: number }>).some((c) => c.id === PUBLIC_CAMPAIGN_ID),
+      ).toBe(false);
+
+      const detail = await request(app).get(`/api/v1/fundraising/campaigns/${PUBLIC_CAMPAIGN_ID}`);
+      expect(detail.status).toBe(403);
+      expect(detail.body.error.code).toBe('FUNDRAISER_NOT_PUBLIC');
+    },
+  );
+
+  it('supports server-side filters, sorting, pagination, and stable string serialization', async () => {
+    const { app } = buildApp();
+    const createCampaign = async (
+      title: string,
+      category: string,
+      deadline: string,
+      raisedAmountMinor: bigint,
+      donorsCount: number,
+    ) => {
+      const created = await request(app)
+        .post('/api/v1/fundraising/campaigns')
+        .set('Authorization', 'Bearer owner')
+        .send({
+          title,
+          caption: `${title} caption`,
+          category,
+          fundingMode: 'ONE_TIME',
+          currencyCode: 'BDT',
+          targetAmountMinor: '50000',
+          beneficiaryType: 'PET',
+          beneficiaryName: title,
+          urgency: 'HIGH',
+          locationText: 'Dhaka',
+          deadline,
+          mediaIds: [1],
+        });
+      expect(created.status).toBe(201);
+      await getTestPrisma().fundraisingCampaign.update({
+        where: { id: created.body.data.id as number },
+        data: {
+          raisedAmountMinor,
+          donorsCount,
+        },
+      });
+      return created.body.data.id as number;
+    };
+
+    const firstId = await createCampaign(
+      'Filter A',
+      'TREATMENT',
+      '2026-08-05T00:00:00.000Z',
+      20000n,
+      2,
+    );
+    const secondId = await createCampaign(
+      'Filter B',
+      'TREATMENT',
+      '2026-08-03T00:00:00.000Z',
+      40000n,
+      4,
+    );
+    await createCampaign('Filter C', 'RESCUE', '2026-08-10T00:00:00.000Z', 10000n, 1);
+
+    const filtered = await request(app).get(
+      '/api/v1/fundraising/feed?category=TREATMENT&urgency=HIGH&sort=MOST_FUNDED&limit=1',
+    );
+    expect(filtered.status).toBe(200);
+    expect(filtered.body.data.items).toHaveLength(1);
+    expect(filtered.body.data.items[0].id).toBe(secondId);
+    expect(typeof filtered.body.data.items[0].targetAmountMinor).toBe('string');
+    expect(typeof filtered.body.data.items[0].createdAt).toBe('string');
+    expect(filtered.body.data.nextCursor).toBe(String(secondId));
+
+    const pageTwo = await request(app).get(
+      `/api/v1/fundraising/feed?category=TREATMENT&urgency=HIGH&sort=MOST_FUNDED&limit=1&cursor=${filtered.body.data.nextCursor}`,
+    );
+    expect(pageTwo.status).toBe(200);
+    expect(pageTwo.body.data.items).toHaveLength(1);
+    expect(pageTwo.body.data.items[0].id).toBe(firstId);
+    expect(pageTwo.body.data.items[0].id).not.toBe(filtered.body.data.items[0].id);
+
+    const endingSoon = await request(app).get(
+      '/api/v1/fundraising/feed?category=TREATMENT&sort=ENDING_SOON&limit=2',
+    );
+    expect(endingSoon.status).toBe(200);
+    expect((endingSoon.body.data.items as Array<{ id: number }>).map((item) => item.id)).toEqual([
+      secondId,
+      firstId,
+    ]);
+  });
 });

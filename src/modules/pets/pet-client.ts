@@ -19,7 +19,14 @@ export type PetErrorKind =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'VERSION_CONFLICT'
   | 'VALIDATION'
+  | 'ANIMAL_TYPE_NOT_FOUND'
+  | 'ANIMAL_BREED_NOT_FOUND'
+  | 'ANIMAL_BREED_SPECIES_MISMATCH'
+  | 'INVALID_MEDIA_OWNERSHIP'
+  | 'MALFORMED_CURSOR'
+  | 'UNSUPPORTED_LEGACY_VALUE'
   | 'RATE_LIMITED'
   | 'DOWNSTREAM_TIMEOUT'
   | 'DOWNSTREAM_UNAVAILABLE'
@@ -75,6 +82,10 @@ export interface PetCreateInput {
   visibility?: unknown;
   historicalVaccinations?: unknown;
   identityDetails?: unknown;
+  version?: unknown;
+  idempotencyKey?: unknown;
+  originatingClientId?: unknown;
+  originatingClientAudience?: unknown;
 }
 
 export type PetUpdateInput = PetCreateInput;
@@ -122,7 +133,10 @@ export interface PetRecord {
   visibility: PetVisibility;
   followersCount: number;
   likesCount: number;
-  status: 'ACTIVE' | 'DELETED';
+  status: 'ACTIVE' | 'ARCHIVED' | 'DELETED';
+  version?: number;
+  archivedAt?: Date | null;
+  deletedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -214,18 +214,9 @@ export function fundraisingRoutes(deps: FundraisingRoutesDeps): Router {
     optional,
     route(async (req, res) => {
       const { userId, isManager } = await currentViewerContext(req, socialStore);
-      const feed = await deps.fundraisingStore.listFeed(
-        userId,
-        {
-          limit: readLimit(req.query.limit, 50),
-          cursor: toText(req.query.cursor) ?? undefined,
-          verified: parseOptionalBoolean(req.query.verified),
-          category: toText(req.query.category) ?? undefined,
-          location: toText(req.query.location) ?? undefined,
-          sort: toText(req.query.sort) ?? undefined,
-        },
-        { isManager },
-      );
+      const feed = await deps.fundraisingStore.listFeed(userId, readFundraisingListQuery(req), {
+        isManager,
+      });
       sendSuccess(res, feed, { requestId: req.requestId, correlationId: req.correlationId });
     }),
   );
@@ -237,7 +228,7 @@ export function fundraisingRoutes(deps: FundraisingRoutesDeps): Router {
       const userId = await currentUserId(req, socialStore);
       const items = await deps.fundraisingStore.listMyCampaigns(
         userId,
-        readLimit(req.query.limit, 100),
+        readFundraisingListQuery(req),
       );
       sendSuccess(res, items, { requestId: req.requestId, correlationId: req.correlationId });
     }),
@@ -631,6 +622,51 @@ function readLimit(value: unknown, fallback: number): number {
   const parsed = readIntOrString(value);
   if (parsed === null) return fallback;
   return Math.max(1, Math.min(parsed, 100));
+}
+
+function readFundraisingListQuery(req: Request): {
+  limit?: number;
+  cursor?: string;
+  verified?: boolean;
+  category?: string;
+  beneficiaryType?: string;
+  urgency?: string;
+  status?: string;
+  location?: string;
+  sort?: string;
+} {
+  const sort = normalizeFundraisingSort(req.query.sort);
+  const status = normalizeOptionalEnum(req.query.status);
+  const category = normalizeOptionalEnum(req.query.category);
+  const beneficiaryType = normalizeOptionalEnum(req.query.beneficiaryType);
+  const urgency = normalizeOptionalEnum(req.query.urgency);
+  return {
+    limit: readLimit(req.query.limit, 50),
+    cursor: toText(req.query.cursor) ?? undefined,
+    verified: parseOptionalBoolean(req.query.verified),
+    category: category ?? undefined,
+    beneficiaryType: beneficiaryType ?? undefined,
+    urgency: urgency ?? undefined,
+    status: status ?? undefined,
+    location: toText(req.query.location) ?? undefined,
+    sort: sort ?? undefined,
+  };
+}
+
+function normalizeOptionalEnum(value: unknown): string | null {
+  const text = toText(value);
+  return text ? text.toUpperCase() : null;
+}
+
+function normalizeFundraisingSort(value: unknown): string | null {
+  const text = toText(value);
+  if (!text) return null;
+  const normalized = text.toUpperCase();
+  const allowed = new Set(['NEWEST', 'OLDEST', 'ENDING_SOON', 'MOST_FUNDED', 'TOP_DONATED']);
+  if (!allowed.has(normalized)) {
+    throw AppError.validation('sort must be one of NEWEST, OLDEST, ENDING_SOON, MOST_FUNDED');
+  }
+  return normalized;
 }
 
 function parseOptionalBoolean(value: unknown): boolean | undefined {

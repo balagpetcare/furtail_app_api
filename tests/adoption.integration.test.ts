@@ -3,6 +3,7 @@ import request from 'supertest';
 import { AppError } from '../src/core/errors/app-error';
 import { createAppWithDependencies } from '../src/app';
 import type { AdoptionStore } from '../src/modules/adoption/adoption-store';
+import type { LocationStore } from '../src/modules/locations/location-store';
 import type { AuthenticatedPrincipal, TokenVerifier } from '../src/security/principal';
 
 function buildApp() {
@@ -241,16 +242,22 @@ function buildApp() {
   } as unknown as AdoptionStore;
 
   const locationStore = {
-    validateSelection: jest.fn().mockImplementation(async (input: any) => {
-      if (input.divisionId === 999) {
-        return { valid: false, reason: 'Unknown divisionId' };
-      }
-      if (input.divisionId !== undefined && input.districtId !== undefined && input.districtId !== input.divisionId * 10) {
-        return { valid: false, reason: 'districtId does not belong to divisionId' };
-      }
-      return { valid: true };
-    }),
-  } as any;
+    validateSelection: jest.fn().mockImplementation(
+      async (input: { divisionId?: number; districtId?: number }) => {
+        if (input.divisionId === 999) {
+          return { valid: false, reason: 'Unknown divisionId' };
+        }
+        if (
+          input.divisionId !== undefined &&
+          input.districtId !== undefined &&
+          input.districtId !== input.divisionId * 10
+        ) {
+          return { valid: false, reason: 'districtId does not belong to divisionId' };
+        }
+        return { valid: true };
+      },
+    ),
+  } as unknown as LocationStore;
 
   return createAppWithDependencies({ authVerifier: verifier, adoptionStore, locationStore });
 }
@@ -345,7 +352,7 @@ describe('adoption route aliases', () => {
       } as unknown as AdoptionStore,
       locationStore: {
         validateSelection: jest.fn().mockResolvedValue({ valid: true }),
-      } as any,
+      } as unknown as LocationStore,
     });
 
     const res = await request(customApp)
@@ -388,8 +395,6 @@ describe('adoption route aliases', () => {
     });
 
     it('denies status change for non-owner and returns a typed 403 error without clearing sessions', async () => {
-      const app = buildApp();
-
       // Change Authorization token to a dummy non-owner token
       const verifier: TokenVerifier = {
         async verifyAccessToken() {
@@ -413,7 +418,7 @@ describe('adoption route aliases', () => {
           async setStatus() {
             throw AppError.adoptionStatusChangeForbidden('You do not own this listing');
           },
-        } as any,
+        } as unknown as AdoptionStore,
       });
 
       const res = await request(customApp)

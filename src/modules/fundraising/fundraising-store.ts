@@ -21,6 +21,7 @@ import {
   type ResolvedPaymentRedirect,
 } from './payment-provider';
 import { epsCheckTransactionStatus, type EpsTransactionOutcome } from './eps-client';
+import { toPublicAuthor } from '../profile/shared-user-profile';
 
 export type FundraisingAccountStatus =
   'DRAFT' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'SUSPENDED' | 'DEACTIVATED';
@@ -647,6 +648,20 @@ export interface DonationCheckoutResponse {
   donationIntent: Record<string, unknown>;
   payment: Record<string, unknown> | null;
   reused: boolean;
+}
+
+type FundraisingListSort = 'NEWEST' | 'OLDEST' | 'ENDING_SOON' | 'MOST_FUNDED';
+
+interface FundraisingListQuery {
+  limit?: number;
+  cursor?: string;
+  verified?: boolean;
+  category?: string;
+  beneficiaryType?: string;
+  urgency?: string;
+  status?: string;
+  location?: string;
+  sort?: FundraisingListSort | string;
 }
 
 interface WalletComputedTotals {
@@ -1282,14 +1297,7 @@ export class FundraisingStore {
 
   async listFeed(
     viewerUserId: number,
-    query: {
-      limit?: number;
-      cursor?: string;
-      verified?: boolean;
-      category?: string;
-      location?: string;
-      sort?: string;
-    },
+    query: FundraisingListQuery,
     opts: { isManager?: boolean } = {},
   ): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }> {
     await this.seedReady;
@@ -1300,22 +1308,16 @@ export class FundraisingStore {
           orderBy: { position: 'asc' },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
-    const campaigns = [];
+    await this.preloadVerificationAccounts(rows.map((row) => row.ownerUserId));
+    const campaigns: CampaignRecord[] = [];
     for (const row of rows) {
       const campaign = this.campaignRecordFromDb(
         row as unknown as FundraisingCampaignDbRecord & {
           media?: FundraisingCampaignMediaDbRecord[];
         },
       );
-      const account = await this.loadVerificationAccountRecord(campaign.ownerUserId);
-      if (account) {
-        this.transaction((state) => {
-          this.syncAccountCacheFromSnapshot(state, account);
-          return undefined;
-        });
-      }
       if (
         this.canViewerSeeCampaign(viewerUserId, campaign, opts.isManager) &&
         this.matchesFeedFilters(campaign, query)
@@ -1334,7 +1336,10 @@ export class FundraisingStore {
     };
   }
 
-  async listMyCampaigns(userId: number, limit = 100): Promise<Record<string, unknown>[]> {
+  async listMyCampaigns(
+    userId: number,
+    query: FundraisingListQuery = {},
+  ): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }> {
     await this.seedReady;
     const rows = await this.prisma.fundraisingCampaign.findMany({
       where: { ownerUserId: userId, deletedAt: null },
@@ -1343,17 +1348,52 @@ export class FundraisingStore {
           orderBy: { position: 'asc' },
         },
       },
-      orderBy: { createdAt: 'desc' },
-      take: Math.max(1, Math.min(limit, 100)),
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
-    const campaigns = rows.map((row) =>
-      this.campaignRecordFromDb(
-        row as unknown as FundraisingCampaignDbRecord & {
-          media?: FundraisingCampaignMediaDbRecord[];
+    await this.preloadVerificationAccounts([userId]);
+    const campaigns = rows
+      .map((row) =>
+        this.campaignRecordFromDb(
+          row as unknown as FundraisingCampaignDbRecord & {
+            media?: FundraisingCampaignMediaDbRecord[];
+          },
+        ),
+      )
+      .filter((campaign) => this.matchesFeedFilters(campaign, query));
+    const sorted = this.sortCampaigns(campaigns, query.sort);
+    const sliced = this.sliceByCursor(sorted, query.limit ?? 100, query.cursor);
+    return {
+      items: sliced.map((campaign) => this.campaignPayload(campaign, userId)),
+      nextCursor:
+        sliced.length === (query.limit ?? 100) && sliced.length > 0
+          ? String(sliced[sliced.length - 1]!.id)
+          : null,
+    };
+  }
+
+  private async preloadVerificationAccounts(ownerUserIds: number[]): Promise<void> {
+    const uniqueOwnerIds = [...new Set(ownerUserIds)].filter((value) => value > 0);
+    if (uniqueOwnerIds.length === 0) return;
+    const rows = await this.prisma.fundraisingVerificationAccount.findMany({
+      where: {
+        ownerUserId: { in: uniqueOwnerIds },
+      },
+      include: {
+        documents: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'asc' },
         },
-      ),
-    );
-    return campaigns.map((campaign) => this.campaignPayload(campaign, userId));
+      },
+    });
+    this.transaction((state) => {
+      for (const row of rows) {
+        this.syncAccountCacheFromSnapshot(
+          state,
+          this.accountRecordFromDb(row as FundraisingVerificationAccountDbRecord),
+        );
+      }
+      return undefined;
+    });
   }
 
   async listUpdates(
@@ -3732,21 +3772,28 @@ export class FundraisingStore {
 
   private campaignPayload(campaign: CampaignRecord, viewerUserId: number): Record<string, unknown> {
     const author = this.userPayload(viewerUserId, campaign.ownerUserId);
+    const media = campaign.mediaIds
+      .map((mediaId) => this.mediaPayloadOrNull(mediaId))
+      .filter((value): value is Record<string, unknown> => value !== null);
     const post = {
       id: campaign.postId,
       author,
       caption: campaign.caption,
-      media: campaign.mediaIds.map((mediaId) => ({
-        id: mediaId,
-        media: this.mediaPayload(mediaId),
-      })),
+      media: media.map((item) => ({ id: item.id, media: item })),
       createdAt: campaign.publishedAt?.toISOString() ?? campaign.createdAt.toISOString(),
     };
     const last3Donors = [...this.state.donationIntents.values()]
       .filter((intent) => intent.campaignId === campaign.id && intent.status === 'SUCCEEDED')
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, 3)
-      .map((intent) => this.donorPayload(viewerUserId, intent.donorUserId, intent.amountMinor));
+      .map((intent) =>
+        this.donorPayload(
+          viewerUserId,
+          intent.donorUserId,
+          intent.amountMinor,
+          intent.isAnonymous && viewerUserId !== intent.donorUserId,
+        ),
+      );
     // Canonical field is `donationAllowed`; `acceptingDonations`/`canDonate`
     // are additive aliases the mobile client also understands — all three
     // must always agree, so they're derived from the same policy call.
@@ -3782,7 +3829,7 @@ export class FundraisingStore {
       author,
       caption: campaign.caption,
       post,
-      media: campaign.mediaIds.map((mediaId) => this.mediaPayload(mediaId)),
+      media,
       stats: {
         raisedAmount: campaign.stats.raisedAmountMinor,
         withdrawnAmount: campaign.stats.withdrawnAmountMinor,
@@ -3818,6 +3865,9 @@ export class FundraisingStore {
     update: CampaignUpdateRecord,
     viewerUserId: number,
   ): Record<string, unknown> {
+    const media = update.mediaIds
+      .map((mediaId) => this.mediaPayloadOrNull(mediaId))
+      .filter((value): value is Record<string, unknown> => value !== null);
     return {
       id: update.id,
       postId: update.postId,
@@ -3829,13 +3879,10 @@ export class FundraisingStore {
         caption: update.caption,
         createdAt: update.createdAt.toISOString(),
         author: this.userPayload(viewerUserId, update.authorId),
-        media: update.mediaIds.map((mediaId) => ({
-          id: mediaId,
-          media: this.mediaPayload(mediaId),
-        })),
+        media: media.map((item) => ({ id: item.id, media: item })),
       },
       author: this.userPayload(viewerUserId, update.authorId),
-      media: update.mediaIds.map((mediaId) => this.mediaPayload(mediaId)),
+      media,
     };
   }
 
@@ -3882,26 +3929,28 @@ export class FundraisingStore {
       bdAreaId: draft.bdAreaId,
       submittedAt: draft.submittedAt,
       mediaIds: [...draft.mediaIds],
-      mediaUrls: draft.mediaIds.map((mediaId) => this.mediaPayload(mediaId).url).filter(Boolean),
+      mediaUrls: draft.mediaIds
+        .map((mediaId) => this.mediaPayloadOrNull(mediaId)?.url)
+        .filter((value): value is string => Boolean(value)),
       post: campaign
         ? {
             id: campaign.postId,
             author: this.userPayload(draft.ownerUserId, draft.ownerUserId),
             caption: campaign.caption,
-            media: campaign.mediaIds.map((mediaId) => ({
-              id: mediaId,
-              media: this.mediaPayload(mediaId),
-            })),
+            media: campaign.mediaIds
+              .map((mediaId) => this.mediaPayloadOrNull(mediaId))
+              .filter((value): value is Record<string, unknown> => value !== null)
+              .map((item) => ({ id: item.id, media: item })),
             createdAt: campaign.createdAt.toISOString(),
           }
         : {
             id: draft.id,
             author: this.userPayload(draft.ownerUserId, draft.ownerUserId),
             caption: draft.caption,
-            media: draft.mediaIds.map((mediaId) => ({
-              id: mediaId,
-              media: this.mediaPayload(mediaId),
-            })),
+            media: draft.mediaIds
+              .map((mediaId) => this.mediaPayloadOrNull(mediaId))
+              .filter((value): value is Record<string, unknown> => value !== null)
+              .map((item) => ({ id: item.id, media: item })),
             createdAt: draft.createdAt.toISOString(),
           },
     };
@@ -3955,15 +4004,35 @@ export class FundraisingStore {
       id: intent.id,
       amount: intent.amountMinor,
       createdAt: intent.createdAt,
-      donor: this.donorPayload(viewerUserId, intent.donorUserId, intent.amountMinor),
+      // The donor themself can always see their own donation was theirs
+      // (isAnonymous only hides identity from OTHER viewers), so a donor
+      // viewing their own history still gets their real profile back.
+      donor: this.donorPayload(
+        viewerUserId,
+        intent.donorUserId,
+        intent.amountMinor,
+        intent.isAnonymous && viewerUserId !== intent.donorUserId,
+      ),
     };
   }
 
   private donorPayload(
     viewerUserId: number,
     donorUserId: number,
-    amount?: bigint,
+    amount: bigint | undefined,
+    isAnonymous: boolean,
   ): Record<string, unknown> {
+    if (isAnonymous) {
+      return {
+        id: null,
+        amount,
+        profile: {
+          displayName: 'Anonymous Donor',
+          username: null,
+          avatarMedia: null,
+        },
+      };
+    }
     const user = this.userPayload(viewerUserId, donorUserId);
     return {
       id: donorUserId,
@@ -4095,12 +4164,47 @@ export class FundraisingStore {
     };
   }
 
-  private userPayload(viewerUserId: number, targetUserId: number): Record<string, unknown> {
-    const detail = this.socialStore.getVisitorUserPayload(viewerUserId, targetUserId);
+  private fallbackUserPayload(targetUserId: number): Record<string, unknown> {
     return {
-      id: detail.id,
-      profile: detail.profile,
+      id: targetUserId,
+      profile: {
+        displayName: 'Furtail Member',
+        username: null,
+        avatarMedia: null,
+      },
     };
+  }
+
+  // Every call site of this method embeds an author/donor into a public
+  // Feed/Comments/Fundraising/Donation response — never the dedicated "view
+  // this user's full profile" endpoint (that lives in social-store.ts's own
+  // routes). So this always returns the safe PublicAuthor projection
+  // (public id, displayName, username, avatarUrl only) — never bio,
+  // education, gender, DOB, marital status, email, or phone, regardless of
+  // the target's profile visibility setting.
+  private userPayload(viewerUserId: number, targetUserId: number): Record<string, unknown> {
+    try {
+      const detail = this.socialStore.getVisitorUserPayload(viewerUserId, targetUserId);
+      const profile = detail.profile as {
+        displayName?: string | null;
+        username?: string | null;
+        avatarMedia?: { url?: string | null } | null;
+      };
+      return {
+        id: detail.id,
+        profile: toPublicAuthor({
+          userId: detail.id,
+          displayName: profile.displayName ?? null,
+          username: profile.username ?? null,
+          avatarUrl: profile.avatarMedia?.url ?? null,
+        }),
+      };
+    } catch (error) {
+      if (error instanceof Error && error.message === 'User not found') {
+        return this.fallbackUserPayload(targetUserId);
+      }
+      throw error;
+    }
   }
 
   private mediaPayload(mediaId: number): Record<string, unknown> {
@@ -4117,6 +4221,17 @@ export class FundraisingStore {
       // individually.
       status: media.status,
     };
+  }
+
+  private mediaPayloadOrNull(mediaId: number): Record<string, unknown> | null {
+    try {
+      return this.mediaPayload(mediaId);
+    } catch (error) {
+      if (error instanceof FundraisingContractError && error.code === 'NOT_FOUND') {
+        return null;
+      }
+      throw error;
+    }
   }
 
   private mustGetMedia(mediaId: number): MediaRef {
@@ -4156,6 +4271,9 @@ export class FundraisingStore {
     if (this.socialStore.isBlocked(viewerUserId, campaign.ownerUserId)) {
       throw new FundraisingContractError('FORBIDDEN', 'Campaign not found', 403);
     }
+    if (this.ownerAccountBlocksPublicVisibility(campaign.ownerUserId)) {
+      throw new FundraisingContractError('NOT_PUBLIC', 'Campaign not public', 403);
+    }
     if (!isPublicVisibleStatus(campaign.status)) {
       throw new FundraisingContractError('NOT_PUBLIC', 'Campaign not public', 403);
     }
@@ -4170,43 +4288,88 @@ export class FundraisingStore {
     if (isManager || this.hasManageAnyAccess(viewerUserId)) return true;
     if (campaign.ownerUserId === viewerUserId) return true;
     if (this.socialStore.isBlocked(viewerUserId, campaign.ownerUserId)) return false;
+    if (this.ownerAccountBlocksPublicVisibility(campaign.ownerUserId)) return false;
     return isPublicVisibleStatus(campaign.status);
   }
 
-  private matchesFeedFilters(
-    campaign: CampaignRecord,
-    query: { verified?: boolean; category?: string; location?: string },
-  ): boolean {
+  private ownerAccountBlocksPublicVisibility(ownerUserId: number): boolean {
+    const status = this.state.accounts.get(ownerUserId)?.status;
+    return status === 'SUSPENDED' || status === 'DEACTIVATED';
+  }
+
+  private matchesFeedFilters(campaign: CampaignRecord, query: FundraisingListQuery): boolean {
     if (query.verified === true && !this.isAccountVerified(campaign.ownerUserId)) return false;
     if (query.verified === false && this.isAccountVerified(campaign.ownerUserId)) return false;
-    if (query.category && campaign.category?.toLowerCase() !== query.category.toLowerCase())
+    if (
+      query.category &&
+      normalizeText(campaign.category)?.toUpperCase() !==
+        normalizeText(query.category)?.toUpperCase()
+    ) {
       return false;
+    }
+    if (
+      query.beneficiaryType &&
+      normalizeText(campaign.beneficiaryType)?.toUpperCase() !==
+        normalizeText(query.beneficiaryType)?.toUpperCase()
+    ) {
+      return false;
+    }
+    if (
+      query.urgency &&
+      normalizeText(campaign.urgency)?.toUpperCase() !== normalizeText(query.urgency)?.toUpperCase()
+    ) {
+      return false;
+    }
+    if (
+      query.status &&
+      normalizeText(campaign.status)?.toUpperCase() !== normalizeText(query.status)?.toUpperCase()
+    ) {
+      return false;
+    }
     if (
       query.location &&
-      campaign.locationText?.toLowerCase().includes(query.location.toLowerCase()) === false
+      normalizeText(campaign.locationText)?.toLowerCase().includes(query.location.toLowerCase()) ===
+        false
     )
       return false;
     return true;
   }
 
   private sortCampaigns(campaigns: CampaignRecord[], sort?: string): CampaignRecord[] {
-    const normalized = (sort ?? '').trim().toLowerCase();
+    const normalized = normalizeText(sort)?.toUpperCase() ?? 'NEWEST';
     const copy = [...campaigns];
-    if (normalized === 'trending') {
-      return copy.sort(
-        (a, b) =>
-          Number(b.stats.raisedAmountMinor - a.stats.raisedAmountMinor) ||
-          b.createdAt.getTime() - a.createdAt.getTime(),
-      );
+    switch (normalized) {
+      case 'OLDEST':
+        return copy.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id - b.id);
+      case 'ENDING_SOON':
+        return copy.sort((a, b) => {
+          const aEnd = (a.endsAt ?? a.deadline ?? new Date('9999-12-31T00:00:00.000Z')).getTime();
+          const bEnd = (b.endsAt ?? b.deadline ?? new Date('9999-12-31T00:00:00.000Z')).getTime();
+          return aEnd - bEnd || b.createdAt.getTime() - a.createdAt.getTime() || b.id - a.id;
+        });
+      case 'MOST_FUNDED':
+      case 'TOP_DONATED':
+      case 'TRENDING':
+        return copy.sort(
+          (a, b) =>
+            Number(b.stats.raisedAmountMinor - a.stats.raisedAmountMinor) ||
+            b.stats.donorsCount - a.stats.donorsCount ||
+            b.createdAt.getTime() - a.createdAt.getTime() ||
+            b.id - a.id,
+        );
+      case 'NEWEST':
+      default:
+        return copy.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id - a.id);
     }
-    return copy.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   private sliceByCursor<T extends { id: number }>(items: T[], limit: number, cursor?: string): T[] {
     const max = Math.max(1, Math.min(limit || 50, 100));
     const cursorId = parseNumber(cursor);
-    const filtered = cursorId ? items.filter((item) => item.id < cursorId) : items;
-    return filtered.slice(0, max);
+    if (cursorId === null) return items.slice(0, max);
+    const cursorIndex = items.findIndex((item) => item.id === cursorId);
+    if (cursorIndex < 0) return items.slice(0, max);
+    return items.slice(cursorIndex + 1, cursorIndex + 1 + max);
   }
 
   private validateDraftForPublishing(draft: CampaignDraftRecord): void {
@@ -4264,7 +4427,12 @@ export class FundraisingStore {
   }
 
   private ensureCanDonate(userId: number, campaign: CampaignRecord): void {
-    this.ensureCanViewCampaign(userId, campaign);
+    if (campaign.deletedAt !== null) {
+      throw new FundraisingContractError('NOT_FOUND', 'Campaign not found', 404);
+    }
+    if (this.socialStore.isBlocked(userId, campaign.ownerUserId)) {
+      throw new FundraisingContractError('FORBIDDEN', 'Campaign not found', 403);
+    }
     const ownerAccount = this.state.accounts.get(campaign.ownerUserId) ?? null;
     if (!canReceiveDonations(ownerAccount)) {
       throw new FundraisingContractError(
@@ -4273,6 +4441,7 @@ export class FundraisingStore {
         422,
       );
     }
+    this.ensureCanViewCampaign(userId, campaign);
     if (!isDonationEligibleStatus(campaign.status)) {
       throw new FundraisingContractError(
         'NOT_DONATABLE',

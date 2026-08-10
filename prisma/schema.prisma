@@ -7,33 +7,43 @@ datasource db {
 }
 
 model User {
-  id                              Int                     @id @default(autoincrement())
-  createdAt                       DateTime                @default(now())
-  updatedAt                       DateTime                @updatedAt
-  friendRequestsSent              FriendRequest[]         @relation("FriendRequestSender")
-  friendRequestsReceived          FriendRequest[]         @relation("FriendRequestRecipient")
-  uploadedMedia                   Media[]                 @relation("MediaOwner")
-  authoredPosts                   Post[]                  @relation("PostAuthor")
-  postBookmarks                   PostBookmark[]          @relation("PostBookmarkedBy")
-  authoredComments                PostComment[]           @relation("CommentAuthor")
-  commentLikes                    PostCommentLike[]       @relation("CommentLikedBy")
-  postLikes                       PostLike[]              @relation("PostLikedBy")
-  postShares                      PostShare[]             @relation("PostSharedBy")
-  postViews                       PostView[]              @relation("PostViewedBy")
-  blocksReceived                  UserBlock[]             @relation("UserBlocked")
-  blocksGiven                     UserBlock[]             @relation("UserBlocker")
+  id                              Int                       @id @default(autoincrement())
+  createdAt                       DateTime                  @default(now())
+  updatedAt                       DateTime                  @updatedAt
+  friendRequestsSent              FriendRequest[]           @relation("FriendRequestSender")
+  friendRequestsReceived          FriendRequest[]           @relation("FriendRequestRecipient")
+  uploadedMedia                   Media[]                   @relation("MediaOwner")
+  authoredPosts                   Post[]                    @relation("PostAuthor")
+  postBookmarks                   PostBookmark[]            @relation("PostBookmarkedBy")
+  authoredComments                PostComment[]             @relation("CommentAuthor")
+  commentLikes                    PostCommentLike[]         @relation("CommentLikedBy")
+  postLikes                       PostLike[]                @relation("PostLikedBy")
+  postShares                      PostShare[]               @relation("PostSharedBy")
+  postViews                       PostView[]                @relation("PostViewedBy")
+  blocksReceived                  UserBlock[]               @relation("UserBlocked")
+  blocksGiven                     UserBlock[]               @relation("UserBlocker")
+  mutesReceived                   UserMute[]                @relation("UserMuted")
+  mutesGiven                      UserMute[]                @relation("UserMuter")
+  restrictionsReceived            UserRestrict[]            @relation("UserRestricted")
+  restrictionsGiven               UserRestrict[]            @relation("UserRestricter")
   centralAuthLink                 UserCentralAuthLink?
-  following                       UserFollow[]            @relation("UserFollowing")
-  followers                       UserFollow[]            @relation("UserFollowers")
+  following                       UserFollow[]              @relation("UserFollowing")
+  followers                       UserFollow[]              @relation("UserFollowers")
   profile                         UserProfile?
-  profileLikesGiven               UserProfileLike[]       @relation("ProfileLikeActor")
-  profileLikesReceived            UserProfileLike[]       @relation("ProfileLikeTarget")
+  profileLikesGiven               UserProfileLike[]         @relation("ProfileLikeActor")
+  profileLikesReceived            UserProfileLike[]         @relation("ProfileLikeTarget")
   wallet                          Wallet?
   walletLedgerEntries             WalletLedgerEntry[]
   walletWithdrawRequests          WalletWithdrawRequest[]
-  adoptionApplicationsAsApplicant AdoptionApplication[]   @relation("AdoptionApplicationApplicant")
-  adoptionApplicationsAsOwner     AdoptionApplication[]   @relation("AdoptionApplicationOwner")
+  pets                            Pet[]                     @relation("PetOwner")
+  petDocumentsUploaded            PetDocument[]             @relation("PetDocumentUploader")
+  petPostsAuthored                PetPost[]                 @relation("PetPostAuthor")
+  petFollows                      PetFollow[]
+  petLikes                        PetLike[]
+  adoptionApplicationsAsApplicant AdoptionApplication[]     @relation("AdoptionApplicationApplicant")
+  adoptionApplicationsAsOwner     AdoptionApplication[]     @relation("AdoptionApplicationOwner")
   adoptionListings                AdoptionListing[]
+  petCreateIdempotencyKeys        PetCreateIdempotencyKey[]
 }
 
 model UserCentralAuthLink {
@@ -115,29 +125,49 @@ model WalletWithdrawRequest {
 }
 
 model UserProfile {
-  userId          Int               @id
-  username        String            @unique
-  displayName     String
-  bio             String?
-  visibility      ProfileVisibility @default(PUBLIC)
-  showEmail       Boolean           @default(true)
-  showPhone       Boolean           @default(false)
-  avatarMediaId   Int?
-  coverMediaId    Int?
-  education       String?
-  placeLive       String?
-  fansAndFriends  String?
-  from            String?
-  profileType     String?
-  workStatus      String?
-  religiousStatus String?
-  gender          String?
-  birthdate       DateTime?
-  maritalStatus   String?
-  isLocked        Boolean           @default(false)
-  avatarMedia     Media?            @relation("UserProfileAvatar", fields: [avatarMediaId], references: [id])
-  coverMedia      Media?            @relation("UserProfileCover", fields: [coverMediaId], references: [id])
-  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                    Int                @id
+  username                  String             @unique
+  displayName               String
+  bio                       String?
+  visibility                ProfileVisibility  @default(PUBLIC)
+  showEmail                 Boolean            @default(false)
+  showPhone                 Boolean            @default(false)
+  defaultPostAudience       PostPrivacy        @default(PUBLIC)
+  followersVisibility       ProfileVisibility  @default(PUBLIC)
+  followingVisibility       ProfileVisibility  @default(PUBLIC)
+  discoverableByEmail       Boolean            @default(false)
+  discoverableByPhone       Boolean            @default(false)
+  discoverableBySearch      Boolean            @default(true)
+  whoCanFollow              InteractionSetting @default(EVERYONE)
+  whoCanMessage             InteractionSetting @default(EVERYONE)
+  whoCanComment             InteractionSetting @default(EVERYONE)
+  whoCanMention             InteractionSetting @default(EVERYONE)
+  whoCanTag                 InteractionSetting @default(EVERYONE)
+  requiresTagReview         Boolean            @default(false)
+  requiresProfilePostReview Boolean            @default(false)
+  showActivityStatus        Boolean            @default(false)
+  showReadReceipts          Boolean            @default(false)
+  notificationPreferences   Json?
+  avatarMediaId             Int?
+  coverMediaId              Int?
+  education                 String?
+  placeLive                 String?
+  fansAndFriends            String?
+  from                      String?
+  profileType               String?
+  workStatus                String?
+  religiousStatus           String?
+  gender                    String?
+  /// @deprecated Central Auth's User.dateOfBirth is now canonical. This
+  /// column is kept only for rollback/inspection (see
+  /// scripts/migrate-dob-to-central-auth.ts) — no client or server code
+  /// should read or write it. Do not add new usages.
+  birthdate                 DateTime?
+  maritalStatus             String?
+  isLocked                  Boolean            @default(false)
+  avatarMedia               Media?             @relation("UserProfileAvatar", fields: [avatarMediaId], references: [id])
+  coverMedia                Media?             @relation("UserProfileCover", fields: [coverMediaId], references: [id])
+  user                      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([visibility])
   @@index([displayName])
@@ -167,6 +197,9 @@ model Media {
   postMedia            PostMedia[]   @relation("PostMediaAsset")
   avatarProfiles       UserProfile[] @relation("UserProfileAvatar")
   coverProfiles        UserProfile[] @relation("UserProfileCover")
+  petProfileImages     Pet[]         @relation("PetProfileImage")
+  petCoverImages       Pet[]         @relation("PetCoverImage")
+  petDocuments         PetDocument[] @relation("PetDocumentMedia")
 
   @@unique([ownerUserId, uploadIdempotencyKey])
   @@index([ownerUserId, createdAt])
@@ -347,6 +380,30 @@ model UserBlock {
   @@index([blockedUserId, createdAt])
 }
 
+model UserMute {
+  id          Int      @id @default(autoincrement())
+  muterId     Int
+  mutedUserId Int
+  createdAt   DateTime @default(now())
+  mutedUser   User     @relation("UserMuted", fields: [mutedUserId], references: [id], onDelete: Cascade)
+  muter       User     @relation("UserMuter", fields: [muterId], references: [id], onDelete: Cascade)
+
+  @@unique([muterId, mutedUserId])
+  @@index([mutedUserId, createdAt])
+}
+
+model UserRestrict {
+  id               Int      @id @default(autoincrement())
+  restricterId     Int
+  restrictedUserId Int
+  createdAt        DateTime @default(now())
+  restrictedUser   User     @relation("UserRestricted", fields: [restrictedUserId], references: [id], onDelete: Cascade)
+  restricter       User     @relation("UserRestricter", fields: [restricterId], references: [id], onDelete: Cascade)
+
+  @@unique([restricterId, restrictedUserId])
+  @@index([restrictedUserId, createdAt])
+}
+
 model FriendRequest {
   id         Int                 @id @default(autoincrement())
   fromUserId Int
@@ -515,6 +572,7 @@ model AnimalType {
   updatedAt        DateTime          @updatedAt
   nameBn           String?
   adoptionListings AdoptionListing[]
+  pets             Pet[]
   category         AnimalCategory?   @relation(fields: [categoryId], references: [id])
   breeds           Breed[]
 
@@ -580,6 +638,7 @@ model Breed {
   isLocal          Boolean           @default(false)
   isUnknown        Boolean           @default(false)
   adoptionListings AdoptionListing[]
+  pets             Pet[]
   animalType       AnimalType        @relation(fields: [animalTypeId], references: [id], onDelete: Cascade)
   defaultSize      AnimalSize?       @relation(fields: [defaultSizeId], references: [id])
 
@@ -587,6 +646,211 @@ model Breed {
   @@index([animalTypeId, isActive, displayOrder])
   @@index([defaultSizeId])
   @@map("breeds")
+}
+
+model Pet {
+  id                        Int                       @id @default(autoincrement())
+  ownerUserId               Int
+  name                      String                    @db.VarChar(120)
+  slug                      String?                   @unique @db.VarChar(160)
+  animalTypeId              Int
+  breedId                   Int?
+  subBreedId                Int?
+  colorId                   Int?
+  coatPatternId             Int?
+  sizeId                    Int?
+  customBreedText           String?                   @db.VarChar(120)
+  customColorText           String?                   @db.VarChar(80)
+  dateOfBirth               DateTime?
+  sex                       String                    @default("UNKNOWN") @db.VarChar(16)
+  gender                    String?                   @db.VarChar(32)
+  microchipNumber           String?                   @db.VarChar(80)
+  isRescue                  Boolean                   @default(false)
+  isNeutered                Boolean                   @default(false)
+  foodHabits                String?                   @db.Text
+  healthDisorders           String?                   @db.Text
+  notes                     String?                   @db.Text
+  bloodType                 String?                   @db.VarChar(32)
+  allergies                 Json?
+  profilePicId              Int?
+  coverMediaId              Int?
+  bio                       String?                   @db.Text
+  isPublicProfileEnabled    Boolean                   @default(false)
+  visibility                String                    @default("PRIVATE") @db.VarChar(32)
+  followersCount            Int                       @default(0)
+  likesCount                Int                       @default(0)
+  status                    String                    @default("ACTIVE") @db.VarChar(32)
+  version                   Int                       @default(1)
+  originatingClientId       String?                   @db.VarChar(128)
+  originatingClientAudience String?                   @db.VarChar(256)
+  identityDetails           Json?
+  archivedAt                DateTime?
+  deletedAt                 DateTime?
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+  ownerUser                 User                      @relation("PetOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  animalType                AnimalType                @relation(fields: [animalTypeId], references: [id])
+  breed                     Breed?                    @relation(fields: [breedId], references: [id])
+  profilePic                Media?                    @relation("PetProfileImage", fields: [profilePicId], references: [id])
+  coverMedia                Media?                    @relation("PetCoverImage", fields: [coverMediaId], references: [id])
+  vaccinations              PetVaccination[]
+  medicalHistory            PetMedicalHistoryRecord[]
+  weightRecords             PetWeightRecord[]
+  dewormingRecords          PetDewormingRecord[]
+  documents                 PetDocument[]
+  posts                     PetPost[]
+  follows                   PetFollow[]
+  likes                     PetLike[]
+  createIdempotencyKeys     PetCreateIdempotencyKey[]
+
+  @@unique([ownerUserId, microchipNumber])
+  @@index([ownerUserId, status, createdAt])
+  @@index([animalTypeId, breedId])
+  @@index([updatedAt])
+  @@map("pets")
+}
+
+model PetVaccination {
+  id             Int       @id @default(autoincrement())
+  petId          Int
+  vaccineName    String    @db.VarChar(160)
+  administeredAt DateTime?
+  nextDueAt      DateTime?
+  veterinarian   String?   @db.VarChar(160)
+  batchNumber    String?   @db.VarChar(80)
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  pet            Pet       @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  @@index([petId, administeredAt])
+  @@map("pet_vaccinations")
+}
+
+model PetMedicalHistoryRecord {
+  id         Int       @id @default(autoincrement())
+  petId      Int
+  title      String    @db.VarChar(160)
+  occurredAt DateTime?
+  clinic     String?   @db.VarChar(160)
+  diagnosis  String?   @db.Text
+  treatment  String?   @db.Text
+  notes      String?   @db.Text
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  pet        Pet       @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  @@index([petId, occurredAt])
+  @@map("pet_medical_history_records")
+}
+
+model PetWeightRecord {
+  id         Int      @id @default(autoincrement())
+  petId      Int
+  weightKg   Decimal  @db.Decimal(8, 3)
+  measuredAt DateTime
+  notes      String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  pet        Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  @@index([petId, measuredAt])
+  @@map("pet_weight_records")
+}
+
+model PetDewormingRecord {
+  id             Int       @id @default(autoincrement())
+  petId          Int
+  medicationName String    @db.VarChar(160)
+  administeredAt DateTime?
+  nextDueAt      DateTime?
+  dosage         String?   @db.VarChar(120)
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  pet            Pet       @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  @@index([petId, administeredAt])
+  @@map("pet_deworming_records")
+}
+
+model PetDocument {
+  id           Int      @id @default(autoincrement())
+  petId        Int
+  mediaId      Int
+  uploadedById Int
+  title        String   @db.VarChar(160)
+  documentType String?  @db.VarChar(64)
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  pet          Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+  media        Media    @relation("PetDocumentMedia", fields: [mediaId], references: [id])
+  uploadedBy   User     @relation("PetDocumentUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([petId, createdAt])
+  @@index([mediaId])
+  @@map("pet_documents")
+}
+
+model PetPost {
+  id        Int      @id @default(autoincrement())
+  petId     Int
+  authorId  Int
+  caption   String?  @db.Text
+  mediaIds  Json?
+  status    String   @default("ACTIVE") @db.VarChar(32)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  pet       Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+  author    User     @relation("PetPostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([petId, createdAt])
+  @@index([authorId, createdAt])
+  @@map("pet_posts")
+}
+
+model PetFollow {
+  id        Int      @id @default(autoincrement())
+  petId     Int
+  userId    Int
+  createdAt DateTime @default(now())
+  pet       Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([petId, userId])
+  @@index([userId, createdAt])
+  @@map("pet_follows")
+}
+
+model PetLike {
+  id        Int      @id @default(autoincrement())
+  petId     Int
+  userId    Int
+  createdAt DateTime @default(now())
+  pet       Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([petId, userId])
+  @@index([userId, createdAt])
+  @@map("pet_likes")
+}
+
+model PetCreateIdempotencyKey {
+  id          Int      @id @default(autoincrement())
+  ownerUserId Int
+  scope       String   @default("pet.create") @db.VarChar(64)
+  key         String   @db.VarChar(160)
+  requestHash String?  @db.VarChar(128)
+  petId       Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  ownerUser   User     @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  pet         Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  @@unique([scope, ownerUserId, key])
+  @@index([ownerUserId, createdAt])
+  @@map("pet_create_idempotency_keys")
 }
 
 model AdoptionListing {
@@ -796,6 +1060,12 @@ enum ProfileVisibility {
   PUBLIC
   FOLLOWERS_ONLY
   PRIVATE
+}
+
+enum InteractionSetting {
+  EVERYONE
+  FOLLOWERS
+  NOBODY
 }
 
 enum PostPrivacy {

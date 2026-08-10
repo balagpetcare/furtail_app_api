@@ -1,8 +1,16 @@
 import type { PrismaClient } from '@prisma/client';
 import { AppError } from '../../core/errors/app-error';
+import { sanitizePublicDisplayName } from '../profile/shared-user-profile';
 
 type MediaLookup = {
-  getMedia(mediaId: number): { id: number; url: string; thumbnailUrl?: string | null; hlsUrl?: string | null; type?: string; mimeType?: string | null } | null;
+  getMedia(mediaId: number): {
+    id: number;
+    url: string;
+    thumbnailUrl?: string | null;
+    hlsUrl?: string | null;
+    type?: string;
+    mimeType?: string | null;
+  } | null;
 };
 
 export type AdoptionApplicationStatus =
@@ -53,8 +61,10 @@ export interface AdoptionListingInput {
   pickupLocationNotes?: string | null;
   serviceAreaType?: string | null;
   serviceAreaNotes?: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   customServiceAreas?: any;
   allowInternationalAdoption?: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   adopterConditions?: any;
   adoptionExperienceRequired?: boolean;
   homeCheckRequired?: boolean;
@@ -166,7 +176,7 @@ interface AdoptionCommentRecord {
   deletedAt: Date | null;
 }
 
-interface AdoptionFavoriteRecord {
+interface _AdoptionFavoriteRecord {
   adoptionListingId: number;
   userId: number;
   createdAt: Date;
@@ -606,7 +616,7 @@ export class AdoptionStore {
     return this.applicationPayload(application);
   }
 
-  async listPublic(query: any, viewerUserId = 0) {
+  async listPublic(query: unknown, viewerUserId = 0) {
     void query;
     const listings = await this.prisma.adoptionListing.findMany({
       where: { status: 'PUBLISHED' },
@@ -637,6 +647,7 @@ export class AdoptionStore {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async mustLoadListing(id: number): Promise<any> {
     const listing = await this.prisma.adoptionListing.findUnique({
       where: { id },
@@ -664,6 +675,7 @@ export class AdoptionStore {
     return listing;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async serializeListing(listing: any, viewerUserId: number) {
     if (
       !listing.ownerUser ||
@@ -683,9 +695,11 @@ export class AdoptionStore {
       mediaIds.length && this.prisma.media && typeof this.prisma.media.findMany === 'function'
         ? await this.prisma.media.findMany({ where: { id: { in: mediaIds } } })
         : [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mediaMap = new Map<number, any>(mediaRows.map((media) => [media.id, media]));
     const resolvedMedia = mediaIds
       .map((mediaId) => mediaMap.get(mediaId) ?? this.mediaLookup?.getMedia(mediaId) ?? null)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .filter((media): media is any => Boolean(media));
     const favoriteCount = this.favoriteCount(listing.id);
     const commentCount = this.commentCount(listing.id);
@@ -694,13 +708,21 @@ export class AdoptionStore {
 
     const [bdAreaRow, bdWardRow, bdZoneRow, bdCityCorporationRow, bdUnionRow, bdUpazilaRow] =
       await Promise.all([
-        listing.bdAreaId ? this.prisma.bdArea.findUnique({ where: { id: listing.bdAreaId } }) : null,
-        listing.bdWardId ? this.prisma.bdArea.findUnique({ where: { id: listing.bdWardId } }) : null,
-        listing.bdZoneId ? this.prisma.bdArea.findUnique({ where: { id: listing.bdZoneId } }) : null,
+        listing.bdAreaId
+          ? this.prisma.bdArea.findUnique({ where: { id: listing.bdAreaId } })
+          : null,
+        listing.bdWardId
+          ? this.prisma.bdArea.findUnique({ where: { id: listing.bdWardId } })
+          : null,
+        listing.bdZoneId
+          ? this.prisma.bdArea.findUnique({ where: { id: listing.bdZoneId } })
+          : null,
         listing.bdCityCorporationId
           ? this.prisma.bdArea.findUnique({ where: { id: listing.bdCityCorporationId } })
           : null,
-        listing.bdUnionId ? this.prisma.bdUnion.findUnique({ where: { id: listing.bdUnionId } }) : null,
+        listing.bdUnionId
+          ? this.prisma.bdUnion.findUnique({ where: { id: listing.bdUnionId } })
+          : null,
         listing.bdUpazilaId
           ? this.prisma.bdUpazila.findUnique({ where: { id: listing.bdUpazilaId } })
           : null,
@@ -717,6 +739,10 @@ export class AdoptionStore {
       listing.bdDivision?.nameEn ??
       listing.country?.name ??
       'Bangladesh';
+    const ownerDisplayName = sanitizePublicDisplayName({
+      displayName: listing.ownerUser?.profile?.displayName ?? null,
+      username: listing.ownerUser?.profile?.username ?? null,
+    });
 
     return {
       id: listing.id,
@@ -732,11 +758,8 @@ export class AdoptionStore {
       owner: {
         id: listing.ownerUserId,
         profile: {
-          displayName:
-            listing.ownerUser?.profile?.displayName ??
-            listing.ownerUser?.profile?.username ??
-            `User ${listing.ownerUserId}`,
-          username: listing.ownerUser?.profile?.username ?? `user${listing.ownerUserId}`,
+          displayName: ownerDisplayName,
+          username: listing.ownerUser?.profile?.username ?? null,
           avatarMedia: listing.ownerUser?.profile?.avatarMedia
             ? {
                 id: listing.ownerUser.profile.avatarMedia.id,
@@ -764,10 +787,7 @@ export class AdoptionStore {
       neutered: Boolean(listing.neutered),
       microchipped: Boolean(listing.microchipped),
       isShelter: false,
-      ownerName:
-        listing.ownerUser?.profile?.displayName ??
-        listing.ownerUser?.profile?.username ??
-        `User ${listing.ownerUserId}`,
+      ownerName: ownerDisplayName,
       ownerUserId: listing.ownerUserId,
       ownerAvatarUrl: listing.ownerUser?.profile?.avatarMedia?.url ?? null,
       ownerRoleLabel: 'Owner',
@@ -870,8 +890,8 @@ export class AdoptionStore {
       user: {
         id: comment.authorUserId,
         profile: {
-          displayName: `User ${comment.authorUserId}`,
-          username: `user${comment.authorUserId}`,
+          displayName: 'Furtail Member',
+          username: null,
           avatarMedia: null,
         },
       },
@@ -890,7 +910,7 @@ export class AdoptionStore {
       createdAt: application.createdAt.toISOString(),
       updatedAt: application.updatedAt.toISOString(),
       applicantName: application.applicantName,
-      applicantUsername: `user${application.applicantUserId}`,
+      applicantUsername: '',
       applicantAvatarUrl: '',
       applicantPhone: application.applicantPhone,
       applicantWhatsappPhone: application.applicantWhatsappPhone ?? '',
@@ -909,8 +929,11 @@ export class AdoptionStore {
       applicant: {
         id: application.applicantUserId,
         profile: {
-          displayName: application.applicantName,
-          username: `user${application.applicantUserId}`,
+          displayName: sanitizePublicDisplayName({
+            displayName: application.applicantName,
+            username: null,
+          }),
+          username: null,
           avatarMedia: null,
         },
       },

@@ -3,8 +3,10 @@ import { Router } from 'express';
 import { AppError } from '../core/errors/app-error';
 import { ErrorCode } from '../core/errors/error-codes';
 import { sendSuccess } from '../core/http/api-response';
+import { env } from '../config/env';
+import { getOrProvisionUserByCentralSubjectOnly } from '../modules/auth/auth.service';
 import { optionalAuth, requiredAuth } from '../security/auth-middleware';
-import type { TokenVerifier } from '../security/principal';
+import type { AuthenticatedPrincipal, TokenVerifier } from '../security/principal';
 import { asyncHandler } from '../shared/async-handler';
 import type { SocialCoreStore } from '../modules/social/social-store';
 import {
@@ -17,20 +19,40 @@ export interface PetRoutesDeps {
   verifier: TokenVerifier;
   petClient?: PetContractClient;
   socialStore?: SocialCoreStore;
+  petIdentityResolver?: (principal: AuthenticatedPrincipal) => Promise<number | null>;
 }
 
-function readUserId(req: { principal?: { sub: string } }): number {
-  const parsed = Number(req.principal?.sub);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+async function readUserId(
+  req: { principal?: AuthenticatedPrincipal },
+  deps: PetRoutesDeps,
+): Promise<number> {
+  if (!req.principal) {
+    throw AppError.authenticationRequired('Authentication required');
+  }
+  const userId = await resolvePetUserId(req.principal, deps);
+  if (typeof userId !== 'number' || !Number.isFinite(userId) || userId <= 0) {
     throw AppError.authenticationInvalid('Invalid access token subject');
   }
-  return Math.trunc(parsed);
+  return Math.trunc(userId);
 }
 
-function readViewerId(req: { principal?: { sub: string } }): number | null {
+async function readViewerId(
+  req: { principal?: AuthenticatedPrincipal },
+  deps: PetRoutesDeps,
+): Promise<number | null> {
   if (!req.principal) return null;
-  const parsed = Number(req.principal.sub);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
+  return readUserId(req, deps);
+}
+
+async function resolvePetUserId(
+  principal: AuthenticatedPrincipal,
+  deps: PetRoutesDeps,
+): Promise<number | null> {
+  if (deps.petIdentityResolver) return deps.petIdentityResolver(principal);
+  if (env.DATABASE_URL) {
+    return (await getOrProvisionUserByCentralSubjectOnly(principal)).id;
+  }
+  return deps.socialStore?.resolveUserId(principal) ?? null;
 }
 
 function toPositiveInt(value: unknown, label: string): number {
@@ -59,8 +81,37 @@ function mapPetError(error: unknown, fallback: string): AppError {
         return AppError.notFound(error.message);
       case 'CONFLICT':
         return AppError.conflict(error.message, error.details);
+      case 'VERSION_CONFLICT':
+        return new AppError(ErrorCode.PET_VERSION_CONFLICT, error.message, 409, error.details);
       case 'VALIDATION':
         return new AppError(ErrorCode.VALIDATION_ERROR, error.message, 422, error.details);
+      case 'ANIMAL_TYPE_NOT_FOUND':
+        return new AppError(ErrorCode.ANIMAL_TYPE_NOT_FOUND, error.message, 422, error.details);
+      case 'ANIMAL_BREED_NOT_FOUND':
+        return new AppError(ErrorCode.ANIMAL_BREED_NOT_FOUND, error.message, 422, error.details);
+      case 'ANIMAL_BREED_SPECIES_MISMATCH':
+        return new AppError(
+          ErrorCode.ANIMAL_BREED_SPECIES_MISMATCH,
+          error.message,
+          422,
+          error.details,
+        );
+      case 'INVALID_MEDIA_OWNERSHIP':
+        return new AppError(
+          ErrorCode.PET_INVALID_MEDIA_OWNERSHIP,
+          error.message,
+          403,
+          error.details,
+        );
+      case 'MALFORMED_CURSOR':
+        return new AppError(ErrorCode.PET_MALFORMED_CURSOR, error.message, 400, error.details);
+      case 'UNSUPPORTED_LEGACY_VALUE':
+        return new AppError(
+          ErrorCode.PET_UNSUPPORTED_LEGACY_VALUE,
+          error.message,
+          422,
+          error.details,
+        );
       case 'RATE_LIMITED':
         return AppError.rateLimited(error.message, error.details);
       case 'OWNERSHIP_VIOLATION':
@@ -97,79 +148,118 @@ function createFallbackMediaLookup() {
   };
 }
 
+function readIdempotencyKey(req: { get(name: string): string | undefined; body?: unknown }) {
+  const header = req.get('Idempotency-Key') ?? req.get('X-Idempotency-Key');
+  if (header && header.trim()) return header.trim();
+  if (req.body && typeof req.body === 'object' && 'idempotencyKey' in req.body) {
+    const value = (req.body as { idempotencyKey?: unknown }).idempotencyKey;
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  }
+  return undefined;
+}
+
+function sendPetCollection(
+  res: Parameters<typeof sendSuccess>[0],
+  items: unknown[],
+  req: { requestId: string; correlationId: string },
+) {
+  sendSuccess(
+    res,
+    {
+      items,
+      nextCursor: null,
+      pets: items,
+    },
+    {
+      requestId: req.requestId,
+      correlationId: req.correlationId,
+    },
+  );
+}
+
+function sendPetResource(
+  res: Parameters<typeof sendSuccess>[0],
+  item: object,
+  req: { requestId: string; correlationId: string },
+  statusCode?: number,
+) {
+  sendSuccess(
+    res,
+    {
+      item,
+      ...item,
+    },
+    {
+      requestId: req.requestId,
+      correlationId: req.correlationId,
+      statusCode,
+    },
+  );
+}
+
+function sendNamedCollection(
+  res: Parameters<typeof sendSuccess>[0],
+  payload: Record<string, unknown>,
+  itemsKey: string,
+  req: { requestId: string; correlationId: string },
+) {
+  const items = Array.isArray(payload[itemsKey]) ? payload[itemsKey] : [];
+  sendSuccess(
+    res,
+    {
+      items,
+      nextCursor: null,
+      ...payload,
+    },
+    {
+      requestId: req.requestId,
+      correlationId: req.correlationId,
+    },
+  );
+}
+
 export function petRoutes(deps: PetRoutesDeps): Router {
   const router = Router();
   const required = requiredAuth({ verifier: deps.verifier });
   const optional = optionalAuth({ verifier: deps.verifier });
   const client = buildPetClient(deps);
 
-  router.get(
-    '/api/v1/user/pets/all',
-    required,
-    asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
-      const payload = await client.listMyPets(userId);
-      sendSuccess(res, payload.pets, {
-        requestId: req.requestId,
-        correlationId: req.correlationId,
-      });
-    }),
-  );
+  const listMyPetsHandler = asyncHandler(async (req, res) => {
+    const userId = await readUserId(req, deps);
+    const payload = await client.listMyPets(userId);
+    sendPetCollection(res, payload.pets, req);
+  });
 
-  router.get(
-    '/api/v1/user/pets',
-    required,
-    asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
-      const payload = await client.listMyPets(userId);
-      sendSuccess(res, payload.pets, {
-        requestId: req.requestId,
-        correlationId: req.correlationId,
+  router.get(['/api/v1/user/pets/all', '/api/v1/me/pets/all'], required, listMyPetsHandler);
+
+  router.get(['/api/v1/user/pets', '/api/v1/me/pets'], required, listMyPetsHandler);
+
+  const createPetHandler = asyncHandler(async (req, res) => {
+    const userId = await readUserId(req, deps);
+    try {
+      const created = await client.createPet(userId, {
+        ...(req.body ?? {}),
+        idempotencyKey: readIdempotencyKey(req),
       });
-    }),
-  );
+      sendPetResource(res, created, req, 201);
+    } catch (error) {
+      throw mapPetError(error, 'Failed to create pet');
+    }
+  });
 
   router.post(
-    '/api/v1/user/pets/register',
+    ['/api/v1/user/pets/register', '/api/v1/me/pets/register'],
     required,
-    asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
-      try {
-        const created = await client.createPet(userId, req.body ?? {});
-        sendSuccess(res, created, {
-          requestId: req.requestId,
-          correlationId: req.correlationId,
-          statusCode: 201,
-        });
-      } catch (error) {
-        throw mapPetError(error, 'Failed to create pet');
-      }
-    }),
+    createPetHandler,
   );
 
-  router.post(
-    '/api/v1/user/pets',
-    required,
-    asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
-      try {
-        const created = await client.createPet(userId, req.body ?? {});
-        sendSuccess(res, created, {
-          requestId: req.requestId,
-          correlationId: req.correlationId,
-          statusCode: 201,
-        });
-      } catch (error) {
-        throw mapPetError(error, 'Failed to create pet');
-      }
-    }),
-  );
+  router.post(['/api/v1/user/pets', '/api/v1/me/pets'], required, createPetHandler);
 
   router.get(
-    '/api/v1/user/pets/:petId/profile',
+    ['/api/v1/user/pets/:petId/profile', '/api/v1/me/pets/:petId/profile'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.getPetProfile(userId, petId);
@@ -181,14 +271,14 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId',
+    ['/api/v1/user/pets/:petId', '/api/v1/me/pets/:petId'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.getOwnedPet(userId, petId);
-        sendSuccess(res, payload, { requestId: req.requestId, correlationId: req.correlationId });
+        sendPetResource(res, payload, req);
       } catch (error) {
         throw mapPetError(error, 'Failed to load pet');
       }
@@ -196,14 +286,14 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.patch(
-    '/api/v1/user/pets/:petId',
+    ['/api/v1/user/pets/:petId', '/api/v1/me/pets/:petId'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.updatePet(userId, petId, req.body ?? {});
-        sendSuccess(res, payload, { requestId: req.requestId, correlationId: req.correlationId });
+        sendPetResource(res, payload, req);
       } catch (error) {
         throw mapPetError(error, 'Failed to update pet');
       }
@@ -211,14 +301,14 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.put(
-    '/api/v1/user/pets/:petId',
+    ['/api/v1/user/pets/:petId', '/api/v1/me/pets/:petId'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.updatePet(userId, petId, req.body ?? {});
-        sendSuccess(res, payload, { requestId: req.requestId, correlationId: req.correlationId });
+        sendPetResource(res, payload, req);
       } catch (error) {
         throw mapPetError(error, 'Failed to update pet');
       }
@@ -226,10 +316,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.delete(
-    '/api/v1/user/pets/:petId',
+    ['/api/v1/user/pets/:petId', '/api/v1/me/pets/:petId'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.deletePet(userId, petId);
@@ -244,7 +334,7 @@ export function petRoutes(deps: PetRoutesDeps): Router {
     '/api/v1/pets/:petId/profile',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.updatePetProfile(userId, petId, req.body ?? {});
@@ -259,7 +349,7 @@ export function petRoutes(deps: PetRoutesDeps): Router {
     '/api/v1/pets/slug/:slug',
     optional,
     asyncHandler(async (req, res) => {
-      const viewerId = readViewerId(req);
+      const viewerId = await readViewerId(req, deps);
       const slug = String(req.params.slug || '').trim();
       try {
         const payload = await client.getPetBySlug(viewerId, slug);
@@ -274,7 +364,7 @@ export function petRoutes(deps: PetRoutesDeps): Router {
     '/api/v1/pets/:petId',
     optional,
     asyncHandler(async (req, res) => {
-      const viewerId = readViewerId(req);
+      const viewerId = await readViewerId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.getPetById(viewerId, petId);
@@ -289,7 +379,7 @@ export function petRoutes(deps: PetRoutesDeps): Router {
     '/api/v1/pets/:petId/follow',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.followPet(userId, petId);
@@ -304,7 +394,7 @@ export function petRoutes(deps: PetRoutesDeps): Router {
     '/api/v1/pets/:petId/follow',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.unfollowPet(userId, petId);
@@ -319,7 +409,7 @@ export function petRoutes(deps: PetRoutesDeps): Router {
     '/api/v1/pets/:petId/like',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.likePet(userId, petId);
@@ -334,7 +424,7 @@ export function petRoutes(deps: PetRoutesDeps): Router {
     '/api/v1/pets/:petId/like',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.unlikePet(userId, petId);
@@ -349,7 +439,7 @@ export function petRoutes(deps: PetRoutesDeps): Router {
     '/api/v1/pets/:petId/social-status',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.getPetSocialStatus(userId, petId);
@@ -364,20 +454,25 @@ export function petRoutes(deps: PetRoutesDeps): Router {
     '/api/v1/pets/:petId/posts',
     optional,
     asyncHandler(async (req, res) => {
-      const viewerId = readViewerId(req);
+      const viewerId = await readViewerId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const limit = toOptionalPositiveInt(req.query.limit) ?? 20;
       const cursor = req.query.cursor;
       try {
         const payload = await client.getPetPosts(viewerId, petId, limit, cursor);
-        sendSuccess(res, payload.items, {
-          requestId: req.requestId,
-          correlationId: req.correlationId,
-          meta: {
+        sendSuccess(
+          res,
+          {
+            items: payload.items,
             nextCursor: payload.nextCursor,
             hasMore: payload.hasMore,
+            posts: payload.items,
           },
-        });
+          {
+            requestId: req.requestId,
+            correlationId: req.correlationId,
+          },
+        );
       } catch (error) {
         throw mapPetError(error, 'Failed to load pet posts');
       }
@@ -388,7 +483,7 @@ export function petRoutes(deps: PetRoutesDeps): Router {
     '/api/v1/pets/:petId/posts',
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.createPetPost(userId, petId, req.body ?? {});
@@ -404,14 +499,14 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId/vaccinations',
+    ['/api/v1/user/pets/:petId/vaccinations', '/api/v1/me/pets/:petId/vaccinations'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.listVaccinations(userId, petId);
-        sendSuccess(res, payload, { requestId: req.requestId, correlationId: req.correlationId });
+        sendNamedCollection(res, payload, 'vaccinations', req);
       } catch (error) {
         throw mapPetError(error, 'Failed to load vaccinations');
       }
@@ -419,10 +514,13 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId/vaccinations/:vaccinationId',
+    [
+      '/api/v1/user/pets/:petId/vaccinations/:vaccinationId',
+      '/api/v1/me/pets/:petId/vaccinations/:vaccinationId',
+    ],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const vaccinationId = toPositiveInt(req.params.vaccinationId, 'vaccination id');
       try {
@@ -435,10 +533,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.post(
-    '/api/v1/user/pets/:petId/vaccinations',
+    ['/api/v1/user/pets/:petId/vaccinations', '/api/v1/me/pets/:petId/vaccinations'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.createVaccination(userId, petId, req.body ?? {});
@@ -454,10 +552,13 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.patch(
-    '/api/v1/user/pets/:petId/vaccinations/:vaccinationId',
+    [
+      '/api/v1/user/pets/:petId/vaccinations/:vaccinationId',
+      '/api/v1/me/pets/:petId/vaccinations/:vaccinationId',
+    ],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const vaccinationId = toPositiveInt(req.params.vaccinationId, 'vaccination id');
       try {
@@ -475,10 +576,13 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.delete(
-    '/api/v1/user/pets/:petId/vaccinations/:vaccinationId',
+    [
+      '/api/v1/user/pets/:petId/vaccinations/:vaccinationId',
+      '/api/v1/me/pets/:petId/vaccinations/:vaccinationId',
+    ],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const vaccinationId = toPositiveInt(req.params.vaccinationId, 'vaccination id');
       try {
@@ -491,10 +595,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId/medical-history',
+    ['/api/v1/user/pets/:petId/medical-history', '/api/v1/me/pets/:petId/medical-history'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.getPetMedicalHistory(userId, petId);
@@ -506,14 +610,17 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId/medical-history/records',
+    [
+      '/api/v1/user/pets/:petId/medical-history/records',
+      '/api/v1/me/pets/:petId/medical-history/records',
+    ],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.listMedicalHistory(userId, petId);
-        sendSuccess(res, payload, { requestId: req.requestId, correlationId: req.correlationId });
+        sendNamedCollection(res, payload, 'medicalHistory', req);
       } catch (error) {
         throw mapPetError(error, 'Failed to load medical history');
       }
@@ -521,10 +628,13 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId/medical-history/records/:recordId',
+    [
+      '/api/v1/user/pets/:petId/medical-history/records/:recordId',
+      '/api/v1/me/pets/:petId/medical-history/records/:recordId',
+    ],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const recordId = toPositiveInt(req.params.recordId, 'medical history record id');
       try {
@@ -537,10 +647,13 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.post(
-    '/api/v1/user/pets/:petId/medical-history/records',
+    [
+      '/api/v1/user/pets/:petId/medical-history/records',
+      '/api/v1/me/pets/:petId/medical-history/records',
+    ],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.createMedicalHistoryRecord(userId, petId, req.body ?? {});
@@ -556,10 +669,13 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.patch(
-    '/api/v1/user/pets/:petId/medical-history/records/:recordId',
+    [
+      '/api/v1/user/pets/:petId/medical-history/records/:recordId',
+      '/api/v1/me/pets/:petId/medical-history/records/:recordId',
+    ],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const recordId = toPositiveInt(req.params.recordId, 'medical history record id');
       try {
@@ -577,10 +693,13 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.delete(
-    '/api/v1/user/pets/:petId/medical-history/records/:recordId',
+    [
+      '/api/v1/user/pets/:petId/medical-history/records/:recordId',
+      '/api/v1/me/pets/:petId/medical-history/records/:recordId',
+    ],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const recordId = toPositiveInt(req.params.recordId, 'medical history record id');
       try {
@@ -593,14 +712,14 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId/deworming',
+    ['/api/v1/user/pets/:petId/deworming', '/api/v1/me/pets/:petId/deworming'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.listDewormingRecords(userId, petId);
-        sendSuccess(res, payload, { requestId: req.requestId, correlationId: req.correlationId });
+        sendNamedCollection(res, payload, 'dewormingHistory', req);
       } catch (error) {
         throw mapPetError(error, 'Failed to load deworming records');
       }
@@ -608,10 +727,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId/deworming/:recordId',
+    ['/api/v1/user/pets/:petId/deworming/:recordId', '/api/v1/me/pets/:petId/deworming/:recordId'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const recordId = toPositiveInt(req.params.recordId, 'deworming record id');
       try {
@@ -624,10 +743,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.post(
-    '/api/v1/user/pets/:petId/deworming',
+    ['/api/v1/user/pets/:petId/deworming', '/api/v1/me/pets/:petId/deworming'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.createDewormingRecord(userId, petId, req.body ?? {});
@@ -643,10 +762,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.patch(
-    '/api/v1/user/pets/:petId/deworming/:recordId',
+    ['/api/v1/user/pets/:petId/deworming/:recordId', '/api/v1/me/pets/:petId/deworming/:recordId'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const recordId = toPositiveInt(req.params.recordId, 'deworming record id');
       try {
@@ -659,10 +778,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.delete(
-    '/api/v1/user/pets/:petId/deworming/:recordId',
+    ['/api/v1/user/pets/:petId/deworming/:recordId', '/api/v1/me/pets/:petId/deworming/:recordId'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const recordId = toPositiveInt(req.params.recordId, 'deworming record id');
       try {
@@ -675,14 +794,14 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId/weights',
+    ['/api/v1/user/pets/:petId/weights', '/api/v1/me/pets/:petId/weights'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.listWeightRecords(userId, petId);
-        sendSuccess(res, payload, { requestId: req.requestId, correlationId: req.correlationId });
+        sendNamedCollection(res, payload, 'weightHistory', req);
       } catch (error) {
         throw mapPetError(error, 'Failed to load weight records');
       }
@@ -690,10 +809,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId/weights/:recordId',
+    ['/api/v1/user/pets/:petId/weights/:recordId', '/api/v1/me/pets/:petId/weights/:recordId'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const recordId = toPositiveInt(req.params.recordId, 'weight record id');
       try {
@@ -706,10 +825,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.post(
-    '/api/v1/user/pets/:petId/weights',
+    ['/api/v1/user/pets/:petId/weights', '/api/v1/me/pets/:petId/weights'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.createWeightRecord(userId, petId, req.body ?? {});
@@ -725,10 +844,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.patch(
-    '/api/v1/user/pets/:petId/weights/:recordId',
+    ['/api/v1/user/pets/:petId/weights/:recordId', '/api/v1/me/pets/:petId/weights/:recordId'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const recordId = toPositiveInt(req.params.recordId, 'weight record id');
       try {
@@ -741,10 +860,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.delete(
-    '/api/v1/user/pets/:petId/weights/:recordId',
+    ['/api/v1/user/pets/:petId/weights/:recordId', '/api/v1/me/pets/:petId/weights/:recordId'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const recordId = toPositiveInt(req.params.recordId, 'weight record id');
       try {
@@ -757,14 +876,14 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId/documents',
+    ['/api/v1/user/pets/:petId/documents', '/api/v1/me/pets/:petId/documents'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.listDocuments(userId, petId);
-        sendSuccess(res, payload, { requestId: req.requestId, correlationId: req.correlationId });
+        sendNamedCollection(res, payload, 'documents', req);
       } catch (error) {
         throw mapPetError(error, 'Failed to load documents');
       }
@@ -772,10 +891,13 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.get(
-    '/api/v1/user/pets/:petId/documents/:documentId',
+    [
+      '/api/v1/user/pets/:petId/documents/:documentId',
+      '/api/v1/me/pets/:petId/documents/:documentId',
+    ],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const documentId = toPositiveInt(req.params.documentId, 'document id');
       try {
@@ -788,10 +910,10 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.post(
-    '/api/v1/user/pets/:petId/documents',
+    ['/api/v1/user/pets/:petId/documents', '/api/v1/me/pets/:petId/documents'],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       try {
         const payload = await client.createDocument(userId, petId, req.body ?? {});
@@ -807,10 +929,13 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.patch(
-    '/api/v1/user/pets/:petId/documents/:documentId',
+    [
+      '/api/v1/user/pets/:petId/documents/:documentId',
+      '/api/v1/me/pets/:petId/documents/:documentId',
+    ],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const documentId = toPositiveInt(req.params.documentId, 'document id');
       try {
@@ -823,10 +948,13 @@ export function petRoutes(deps: PetRoutesDeps): Router {
   );
 
   router.delete(
-    '/api/v1/user/pets/:petId/documents/:documentId',
+    [
+      '/api/v1/user/pets/:petId/documents/:documentId',
+      '/api/v1/me/pets/:petId/documents/:documentId',
+    ],
     required,
     asyncHandler(async (req, res) => {
-      const userId = readUserId(req);
+      const userId = await readUserId(req, deps);
       const petId = toPositiveInt(req.params.petId, 'pet id');
       const documentId = toPositiveInt(req.params.documentId, 'document id');
       try {

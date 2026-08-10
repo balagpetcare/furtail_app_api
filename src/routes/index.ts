@@ -46,10 +46,10 @@ export function rootRouter(deps: RootRouterDeps): Router {
   const router = Router();
   router.use(healthRoutes(deps));
   router.use(authRoutes(deps));
-  router.use(socialRoutes(deps));
   router.use(notificationsRoutes(deps));
   router.use(reportsRoutes(deps));
   router.use(petRoutes(deps));
+  router.use(socialRoutes(deps));
   router.use(fundraisingRoutes(deps));
   router.use(walletRoutes(deps));
   router.use(adoptionRoutes(deps));

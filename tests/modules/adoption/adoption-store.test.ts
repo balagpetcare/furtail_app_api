@@ -1,8 +1,26 @@
+import type { PrismaClient } from '@prisma/client';
 import { AdoptionStore } from '../../../src/modules/adoption/adoption-store';
+
+// Loose mock shape (jest.fn() per delegate method actually used by
+// AdoptionStore) — cast to PrismaClient at construction so the store's
+// real constructor signature is still type-checked at the call site.
+interface MockPrisma {
+  adoptionListing: {
+    create: jest.Mock;
+    findUnique: jest.Mock;
+    update: jest.Mock;
+    findMany: jest.Mock;
+    findFirst: jest.Mock;
+  };
+  media: { findMany: jest.Mock };
+  bdArea: { findUnique: jest.Mock };
+  bdUnion: { findUnique: jest.Mock };
+  bdUpazila: { findUnique: jest.Mock };
+}
 
 describe('AdoptionStore', () => {
   let store: AdoptionStore;
-  let mockPrisma: any;
+  let mockPrisma: MockPrisma;
 
   beforeEach(() => {
     mockPrisma = {
@@ -26,7 +44,7 @@ describe('AdoptionStore', () => {
         findUnique: jest.fn(),
       },
     };
-    store = new AdoptionStore(mockPrisma as any);
+    store = new AdoptionStore(mockPrisma as unknown as PrismaClient);
   });
 
   function buildListing(extra: Record<string, unknown> = {}) {
@@ -145,7 +163,7 @@ describe('AdoptionStore', () => {
     mockPrisma.bdUnion.findUnique = jest.fn().mockResolvedValue(null);
     mockPrisma.bdUpazila.findUnique = jest.fn().mockResolvedValue(null);
 
-    const storeWithLookup = new AdoptionStore(mockPrisma as any, {
+    const storeWithLookup = new AdoptionStore(mockPrisma as unknown as PrismaClient, {
       getMedia(mediaId: number) {
         if (mediaId !== 11) return null;
         return {

@@ -2,6 +2,7 @@ import compression from 'compression';
 import cors from 'cors';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
+import type { PrismaClient } from '@prisma/client';
 
 import { env } from './config/env';
 import { AppError } from './core/errors/app-error';
@@ -15,6 +16,7 @@ import { createInMemoryRateLimiter } from './security/rate-limit';
 import { rootRouter } from './routes';
 import { createSocialCoreStore, type SocialCoreStore } from './modules/social/social-store';
 import { createInMemoryPetClient, type PetContractClient } from './modules/pets/pet-client';
+import { createPrismaPetClient } from './modules/pets/prisma-pet-client';
 import {
   createFundraisingStore,
   type FundraisingStore,
@@ -24,12 +26,19 @@ import { getPrisma } from './infrastructure/db/prisma-client';
 import { createLocationStore, type LocationStore } from './modules/locations/location-store';
 import { createPrismaLocationDataSource } from './modules/locations/prisma-location-data-source';
 import type { AnimalTaxonomyStore } from './modules/animals/animal-taxonomy-store';
+import type { AuthenticatedPrincipal } from './security/principal';
 
 export interface AppDependencies {
   databaseReadiness?: DatabaseReadinessService;
   authVerifier?: ReturnType<typeof createCentralAuthVerifier>;
+  // Explicit override for tests that need Prisma-backed enforcement
+  // without relying on the module-global env.DATABASE_URL (which
+  // tests/setup-env.ts freezes empty for the whole Jest process — see the
+  // comment on SocialRoutesDeps.prisma in social.routes.ts).
+  prisma?: PrismaClient | null;
   socialStore?: SocialCoreStore;
   petClient?: PetContractClient;
+  petIdentityResolver?: (principal: AuthenticatedPrincipal) => Promise<number | null>;
   fundraisingStore?: FundraisingStore;
   adoptionStore?: AdoptionStore;
   locationStore?: LocationStore;
@@ -66,17 +75,22 @@ export function createAppWithDependencies(deps: AppDependencies): Express {
   const app = express();
   const databaseReadiness = deps.databaseReadiness ?? createDatabaseReadinessService();
   const authVerifier = deps.authVerifier ?? createCentralAuthVerifier();
-  const hasDatabase = Boolean(env.DATABASE_URL);
-  const prisma = hasDatabase ? getPrisma() : null;
-  const socialStore = deps.socialStore ?? createSocialCoreStore(undefined, undefined, undefined, prisma);
-  const petClient = deps.petClient ?? createInMemoryPetClient(socialStore);
+  const hasDatabase = deps.prisma !== undefined ? deps.prisma !== null : Boolean(env.DATABASE_URL);
+  const prisma = deps.prisma !== undefined ? deps.prisma : hasDatabase ? getPrisma() : null;
+  const socialStore =
+    deps.socialStore ?? createSocialCoreStore(undefined, undefined, undefined, prisma);
+  const petClient =
+    deps.petClient ??
+    (prisma ? createPrismaPetClient(prisma) : createInMemoryPetClient(socialStore));
   const fundraisingStore = deps.fundraisingStore ?? createFundraisingStore(socialStore);
   const adoptionStore =
     deps.adoptionStore ??
     (prisma ? new AdoptionStore(prisma, socialStore) : createNoopAdoptionStore());
   const locationStore =
     deps.locationStore ??
-    (prisma ? createLocationStore(createPrismaLocationDataSource(prisma)) : createNoopLocationStore());
+    (prisma
+      ? createLocationStore(createPrismaLocationDataSource(prisma))
+      : createNoopLocationStore());
 
   // Foundation-level middleware only; no business routes are registered.
   app.disable('x-powered-by');
@@ -109,8 +123,10 @@ export function createAppWithDependencies(deps: AppDependencies): Express {
     rootRouter({
       databaseReadiness,
       verifier: authVerifier,
+      prisma,
       socialStore,
       petClient,
+      petIdentityResolver: deps.petIdentityResolver,
       fundraisingStore,
       adoptionStore,
       locationStore,

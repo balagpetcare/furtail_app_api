@@ -676,6 +676,7 @@ describe('fundraising contracts', () => {
         cancelUrl: 'https://app.example/cancel',
       });
     expect(blockedDonation.status).toBe(422);
+    expect(blockedDonation.body.error.code).toBe('FUNDRAISER_NOT_DONATABLE');
   });
 
   it('treats body idempotency keys as submit idempotency for mobile clients', async () => {

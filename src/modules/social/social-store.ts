@@ -436,6 +436,15 @@ export interface SocialProfileUpdateInput {
   showPhone?: boolean | null;
   avatarMediaId?: number | null;
   coverMediaId?: number | null;
+  education?: string | null;
+  placeLive?: string | null;
+  from?: string | null;
+  profileType?: string | null;
+  workStatus?: string | null;
+  religiousStatus?: string | null;
+  gender?: string | null;
+  birthdate?: string | Date | null;
+  maritalStatus?: string | null;
   email?: string | null;
   phone?: string | null;
 }
@@ -562,6 +571,11 @@ export class SocialCoreStore {
   private readonly bookmarks = new Set<string>();
   private readonly blocks = new Set<string>();
   private readonly blockRecords = new Map<string, Date>();
+  // muterId:mutedUserId (directional — I don't see them, they can still see me)
+  private readonly mutes = new Set<string>();
+  // restricterId:restrictedUserId (directional — their comments on MY
+  // content become hidden from other viewers, per restrictUser below)
+  private readonly restricts = new Set<string>();
   private readonly friendRequests = new Map<number, FriendRequestRecord>();
   private readonly friends = new Set<string>();
   private readonly notifications = new Map<number, NotificationRecord>();
@@ -1039,9 +1053,40 @@ export class SocialCoreStore {
     return resolved.id;
   }
 
+  /**
+   * Public wrapper for ensureUserShadow, for a caller that already knows a
+   * numeric id is a real Prisma user (e.g. an action target the current
+   * request resolved via prisma) but which the in-memory store's own
+   * per-process cache hasn't seen yet — this happens for any target who
+   * hasn't themself authenticated in this process (a real production
+   * long-running server accumulates shadows over time from every request
+   * that touches a given user; a cold test process has none yet). Never
+   * overwrites data for a user the store already knows about beyond the
+   * same selective-merge ensureUserShadow already does.
+   */
+  ensureUserKnown(id: number, profile: ResolvedIdentity): void {
+    this.ensureUserShadow(id, profile);
+  }
+
   /** Auto-vivifies a minimal local user record the first time a resolved identity is seen. */
   private ensureUserShadow(id: number, profile: ResolvedIdentity): void {
-    if (this.users.has(id)) return;
+    const existing = this.users.get(id);
+    if (existing) {
+      if (profile.username) {
+        existing.profile.username =
+          profile.username
+            .toLowerCase()
+            .replace(/[^a-z0-9_]/g, '')
+            .slice(0, 30) || existing.profile.username;
+      }
+      if (profile.displayName) {
+        existing.profile.displayName = profile.displayName;
+      }
+      if (profile.email) {
+        existing.auth.email = profile.email;
+      }
+      return;
+    }
     const fallbackHandle = `user${id}`;
     const username =
       (profile.username || fallbackHandle)
@@ -1146,6 +1191,82 @@ export class SocialCoreStore {
       });
     }
     return blocked;
+  }
+
+  // ─── Mute (directional: hides muted user's posts from the muter's own
+  // feed only — the muted user is unaffected and unaware) ──────────────────
+
+  isMuted(muterId: number, targetId: number): boolean {
+    return this.mutes.has(keyPair(muterId, targetId));
+  }
+
+  muteUser(muterId: number, targetId: number): void {
+    if (muterId === targetId) throw new Error('You cannot mute yourself');
+    this.mustGetUser(targetId);
+    this.mutes.add(keyPair(muterId, targetId));
+  }
+
+  unmuteUser(muterId: number, targetId: number): void {
+    this.mutes.delete(keyPair(muterId, targetId));
+  }
+
+  listMutedUsers(muterId: number): BlockedUserRecord[] {
+    const muted: BlockedUserRecord[] = [];
+    for (const pair of this.mutes) {
+      const [sourceRaw, targetRaw] = pair.split(':');
+      const source = Number(sourceRaw);
+      const target = Number(targetRaw);
+      if (!Number.isFinite(source) || !Number.isFinite(target) || source !== muterId) continue;
+      const user = this.users.get(target);
+      if (!user) continue;
+      const avatarMediaId = user.profile.avatarMediaId;
+      muted.push({
+        userId: user.id,
+        displayName: user.profile.displayName,
+        avatarUrl: avatarMediaId ? this.mediaPayload(avatarMediaId).url : null,
+        blockedAt: new Date(),
+      });
+    }
+    return muted;
+  }
+
+  // ─── Restrict (directional: the restricted user's comments on the
+  // RESTRICTER's own content become hidden from every other viewer — only
+  // the comment's author and the restricter can still see them; the
+  // restricted user is not notified and can otherwise interact normally) ──
+
+  isRestrictedBy(restricterId: number, targetId: number): boolean {
+    return this.restricts.has(keyPair(restricterId, targetId));
+  }
+
+  restrictUser(restricterId: number, targetId: number): void {
+    if (restricterId === targetId) throw new Error('You cannot restrict yourself');
+    this.mustGetUser(targetId);
+    this.restricts.add(keyPair(restricterId, targetId));
+  }
+
+  unrestrictUser(restricterId: number, targetId: number): void {
+    this.restricts.delete(keyPair(restricterId, targetId));
+  }
+
+  listRestrictedUsers(restricterId: number): BlockedUserRecord[] {
+    const restricted: BlockedUserRecord[] = [];
+    for (const pair of this.restricts) {
+      const [sourceRaw, targetRaw] = pair.split(':');
+      const source = Number(sourceRaw);
+      const target = Number(targetRaw);
+      if (!Number.isFinite(source) || !Number.isFinite(target) || source !== restricterId) continue;
+      const user = this.users.get(target);
+      if (!user) continue;
+      const avatarMediaId = user.profile.avatarMediaId;
+      restricted.push({
+        userId: user.id,
+        displayName: user.profile.displayName,
+        avatarUrl: avatarMediaId ? this.mediaPayload(avatarMediaId).url : null,
+        blockedAt: new Date(),
+      });
+    }
+    return restricted;
   }
 
   getNotificationPreferences(userId: number): { allowEmail: boolean; allowSms: boolean } {
@@ -1438,6 +1559,21 @@ export class SocialCoreStore {
       user.profile.showEmail = Boolean(input.showEmail);
     if (input.showPhone !== undefined && input.showPhone !== null)
       user.profile.showPhone = Boolean(input.showPhone);
+    if (input.education !== undefined) user.profile.education = normalizeText(input.education);
+    if (input.placeLive !== undefined) user.profile.placeLive = normalizeText(input.placeLive);
+    if (input.from !== undefined) user.profile.from = normalizeText(input.from);
+    if (input.profileType !== undefined)
+      user.profile.profileType = normalizeText(input.profileType);
+    if (input.workStatus !== undefined) user.profile.workStatus = normalizeText(input.workStatus);
+    if (input.religiousStatus !== undefined)
+      user.profile.religiousStatus = normalizeText(input.religiousStatus);
+    if (input.gender !== undefined) user.profile.gender = normalizeText(input.gender);
+    // DEPRECATED: birthdate is no longer writable here — Central Auth's
+    // User.dateOfBirth is canonical. input.birthdate is intentionally
+    // ignored even if a caller still sends it (see the Prisma-backed
+    // updateSharedProfile in shared-user-profile.ts for the same rule).
+    if (input.maritalStatus !== undefined)
+      user.profile.maritalStatus = normalizeText(input.maritalStatus);
     if (input.email !== undefined) user.auth.email = normalizeText(input.email) ?? user.auth.email;
     if (input.phone !== undefined) user.auth.phone = normalizeText(input.phone);
     if (input.avatarMediaId !== undefined)
@@ -1964,7 +2100,12 @@ export class SocialCoreStore {
     const post = this.mustGetPost(postId);
     this.ensureCanViewPost(viewerId, post);
     const comments = [...this.comments.values()]
-      .filter((comment) => comment.postId === postId && comment.parentId === null)
+      .filter(
+        (comment) =>
+          comment.postId === postId &&
+          comment.parentId === null &&
+          this.canViewerSeeComment(viewerId, post, comment),
+      )
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     if (cursor !== undefined && cursor !== null && String(cursor).length > 0) {
       const startAfter = cursorToNumber(cursor);
@@ -2525,7 +2666,13 @@ export class SocialCoreStore {
 
   private getVisiblePosts(viewerId: number): PostRecord[] {
     return [...this.posts.values()].filter(
-      (post) => post.status !== 'DELETED' && this.canViewerSeePost(viewerId, post),
+      (post) =>
+        post.status !== 'DELETED' &&
+        this.canViewerSeePost(viewerId, post) &&
+        // Mute only hides from the muter's own feed/listing surfaces — the
+        // post is still directly reachable by id (matching real-world mute
+        // semantics, unlike block which is a hard visibility wall).
+        !this.isMuted(viewerId, post.authorId)
     );
   }
 
@@ -2543,6 +2690,15 @@ export class SocialCoreStore {
     if (!this.canViewerSeePost(viewerId, post)) {
       throw new Error('Forbidden');
     }
+  }
+
+  // Restrict enforcement: a comment authored by someone the POST AUTHOR has
+  // restricted is hidden from every viewer except the comment's own author
+  // and the post author (restricter) themself — the restricted user is
+  // never told their comment was hidden.
+  private canViewerSeeComment(viewerId: number, post: PostRecord, comment: CommentRecord): boolean {
+    if (!this.isRestrictedBy(post.authorId, comment.authorId)) return true;
+    return viewerId === comment.authorId || viewerId === post.authorId;
   }
 
   private slicePosts(

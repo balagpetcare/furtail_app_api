@@ -58,6 +58,25 @@ describe('social core modules', () => {
     expect(updated.body.data.profile.avatarMedia.id).toBe(upload.body.data.id);
   });
 
+  it('ignores a birthdate sent to PATCH /user/me — DOB is owned by Central Auth, not Furtail', async () => {
+    const { app } = buildApp();
+
+    const before = await request(app)
+      .get('/api/v1/user/me')
+      .set('Authorization', 'Bearer valid-token');
+    expect(before.status).toBe(200);
+
+    const updated = await request(app)
+      .patch('/api/v1/user/me')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ displayName: 'Amina DOB Test', birthdate: '1990-01-01T00:00:00.000Z' });
+    expect(updated.status).toBe(200);
+    expect(updated.body.data.profile.displayName).toBe('Amina DOB Test');
+    // Furtail's profile response must not have picked up the sent
+    // birthdate — it stays exactly what it was before this PATCH.
+    expect(updated.body.data.profile.birthdate).toBe(before.body.data.profile.birthdate);
+  });
+
   it('rejects a duplicate username update', async () => {
     const { app } = buildApp();
 
@@ -258,7 +277,7 @@ describe('social core modules', () => {
         .get('/api/v1/stories/feed')
         .set('Authorization', 'Bearer valid-token');
       expect(feedAfter.status).toBe(200);
-      const createdStory = feedAfter.body.data.stories.find((s: any) => s.id === storyId);
+      const createdStory = feedAfter.body.data.stories.find((s: { id: number }) => s.id === storyId);
       expect(createdStory).toBeDefined();
       expect(createdStory.isViewedByMe).toBe(false);
 
@@ -272,7 +291,7 @@ describe('social core modules', () => {
       const feedAfterView = await request(app)
         .get('/api/v1/stories/feed')
         .set('Authorization', 'Bearer valid-token');
-      const viewedStory = feedAfterView.body.data.stories.find((s: any) => s.id === storyId);
+      const viewedStory = feedAfterView.body.data.stories.find((s: { id: number }) => s.id === storyId);
       expect(viewedStory.isViewedByMe).toBe(true);
       expect(viewedStory.viewCount).toBe(1);
 
@@ -286,7 +305,7 @@ describe('social core modules', () => {
       const feedFinal = await request(app)
         .get('/api/v1/stories/feed')
         .set('Authorization', 'Bearer valid-token');
-      const deletedStory = feedFinal.body.data.stories.find((s: any) => s.id === storyId);
+      const deletedStory = feedFinal.body.data.stories.find((s: { id: number }) => s.id === storyId);
 
       expect(deletedStory).toBeUndefined();
     });

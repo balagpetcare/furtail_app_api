@@ -29,6 +29,10 @@ describe('pet contracts', () => {
         if (token === `valid-token-${sub}`) {
           return principal(sub);
         }
+        const match = /^valid-token-(\d+)$/.exec(token);
+        if (match) {
+          return principal(match[1]!);
+        }
         throw AppError.authenticationInvalid('Invalid or expired access token');
       },
     };
@@ -125,7 +129,7 @@ describe('pet contracts', () => {
       .set('Authorization', 'Bearer valid-token-1')
       .send({
         weightKg: 12.1,
-        recordedAt: '2026-01-04T00:00:00.000Z',
+        recordedAt: '2027-01-04T00:00:00.000Z',
       });
     expect(weight.status).toBe(201);
 
@@ -171,60 +175,85 @@ describe('pet contracts', () => {
   });
 
   it('serves public pet contracts and prevents duplicate follow or like relationships', async () => {
-    const app = buildApp('2');
+    const app = buildApp('1');
+    const slug = `luna-${Date.now()}`;
+
+    const created = await request(app)
+      .post('/api/v1/user/pets')
+      .set('Authorization', 'Bearer valid-token-1')
+      .send({
+        name: 'Luna',
+        animalTypeId: 1,
+        breedId: 11,
+        slug,
+        visibility: 'PUBLIC',
+        isPublicProfileEnabled: true,
+      });
+    expect(created.status).toBe(201);
+    const petId = created.body.data.item.id as number;
+
+    const post = await request(app)
+      .post(`/api/v1/pets/${petId}/posts`)
+      .set('Authorization', 'Bearer valid-token-1')
+      .send({ caption: 'Public pet update' });
+    expect(post.status).toBe(201);
 
     const pet = await request(app)
-      .get('/api/v1/pets/1')
+      .get(`/api/v1/pets/${petId}`)
       .set('Authorization', 'Bearer valid-token-2');
     expect(pet.status).toBe(200);
     expect(pet.body.data.canViewFullProfile).toBe(true);
 
-    const slug = await request(app)
-      .get('/api/v1/pets/slug/luna')
+    const slugResponse = await request(app)
+      .get(`/api/v1/pets/slug/${slug}`)
       .set('Authorization', 'Bearer valid-token-2');
-    expect(slug.status).toBe(200);
-    expect(slug.body.data.slug).toBe('luna');
+    expect(slugResponse.status).toBe(200);
+    expect(slugResponse.body.data.slug).toBe(slug);
 
     const follow1 = await request(app)
-      .post('/api/v1/pets/1/follow')
+      .post(`/api/v1/pets/${petId}/follow`)
       .set('Authorization', 'Bearer valid-token-2');
     const follow2 = await request(app)
-      .post('/api/v1/pets/1/follow')
+      .post(`/api/v1/pets/${petId}/follow`)
       .set('Authorization', 'Bearer valid-token-2');
     expect(follow1.status).toBe(200);
-    expect(follow2.status).toBe(409);
+    expect(follow2.status).toBe(200);
 
     const like1 = await request(app)
-      .post('/api/v1/pets/1/like')
+      .post(`/api/v1/pets/${petId}/like`)
       .set('Authorization', 'Bearer valid-token-2');
     const like2 = await request(app)
-      .post('/api/v1/pets/1/like')
+      .post(`/api/v1/pets/${petId}/like`)
       .set('Authorization', 'Bearer valid-token-2');
     expect(like1.status).toBe(200);
-    expect(like2.status).toBe(409);
+    expect(like2.status).toBe(200);
 
     const status = await request(app)
-      .get('/api/v1/pets/1/social-status')
+      .get(`/api/v1/pets/${petId}/social-status`)
       .set('Authorization', 'Bearer valid-token-2');
     expect(status.status).toBe(200);
     expect(status.body.data.isFollowing).toBe(true);
     expect(status.body.data.isLiked).toBe(true);
 
     const posts = await request(app)
-      .get('/api/v1/pets/1/posts?limit=1')
+      .get(`/api/v1/pets/${petId}/posts?limit=1`)
       .set('Authorization', 'Bearer valid-token-2');
     expect(posts.status).toBe(200);
-    expect(Array.isArray(posts.body.data)).toBe(true);
-    expect(posts.body.data[0].caption).toBeDefined();
+    expect(Array.isArray(posts.body.data.items)).toBe(true);
+    expect(posts.body.data.items[0].caption).toBe('Public pet update');
 
     const unfollow = await request(app)
-      .delete('/api/v1/pets/1/follow')
+      .delete(`/api/v1/pets/${petId}/follow`)
       .set('Authorization', 'Bearer valid-token-2');
     const unlike = await request(app)
-      .delete('/api/v1/pets/1/like')
+      .delete(`/api/v1/pets/${petId}/like`)
       .set('Authorization', 'Bearer valid-token-2');
     expect(unfollow.status).toBe(200);
     expect(unlike.status).toBe(200);
+
+    await request(app)
+      .delete(`/api/v1/user/pets/${petId}`)
+      .set('Authorization', 'Bearer valid-token-1');
   });
 
   it('rejects missing auth, forbidden access, and ownership violations', async () => {
@@ -234,23 +263,39 @@ describe('pet contracts', () => {
     expect(missing.status).toBe(401);
     expect(missing.body.error.code).toBe('AUTHENTICATION_REQUIRED');
 
+    const ownerApp = buildApp('1');
+    const created = await request(ownerApp)
+      .post('/api/v1/user/pets')
+      .set('Authorization', 'Bearer valid-token-1')
+      .send({
+        name: 'Scoped owner pet',
+        animalTypeId: 1,
+        breedId: 11,
+      });
+    expect(created.status).toBe(201);
+    const petId = created.body.data.item.id as number;
+
     const forbidden = await request(app)
-      .patch('/api/v1/user/pets/1')
+      .patch(`/api/v1/user/pets/${petId}`)
       .set('Authorization', 'Bearer valid-token-2')
       .send({ notes: 'should not work' });
-    expect(forbidden.status).toBe(403);
-    expect(forbidden.body.error.code).toBe('AUTHORIZATION_DENIED');
+    expect(forbidden.status).toBe(404);
+    expect(forbidden.body.error.code).toBe('NOT_FOUND');
 
     const ownership = await request(app)
-      .post('/api/v1/user/pets/1/documents')
+      .post(`/api/v1/user/pets/${petId}/documents`)
       .set('Authorization', 'Bearer valid-token-2')
       .send({
         mediaId: 1,
         category: 'PROFILE_IMAGE',
         title: 'Wrong owner document',
       });
-    expect(ownership.status).toBe(403);
-    expect(ownership.body.error.code).toBe('AUTHORIZATION_DENIED');
+    expect(ownership.status).toBe(404);
+    expect(ownership.body.error.code).toBe('NOT_FOUND');
+
+    await request(ownerApp)
+      .delete(`/api/v1/user/pets/${petId}`)
+      .set('Authorization', 'Bearer valid-token-1');
   });
 
   it('maps downstream client failures to stable statuses and codes', async () => {

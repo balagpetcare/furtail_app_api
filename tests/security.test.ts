@@ -59,7 +59,10 @@ describe('CentralAuthJwtVerifier', () => {
     ],
   };
 
-  function verifierWithKey(fetchJwks = async (_jwksUri: string) => jwks) {
+  function verifierWithKey(
+    fetchJwks = async (_jwksUri: string) => jwks,
+    overrides: Partial<ConstructorParameters<typeof CentralAuthJwtVerifier>[0]> = {},
+  ) {
     return new CentralAuthJwtVerifier({
       issuer,
       audience,
@@ -69,6 +72,7 @@ describe('CentralAuthJwtVerifier', () => {
       clockToleranceSeconds,
       fetchJwks,
       now: () => now,
+      ...overrides,
     });
   }
 
@@ -156,6 +160,82 @@ describe('CentralAuthJwtVerifier', () => {
     await expect(verifierWithKey().verifyAccessToken(token)).rejects.toMatchObject({
       code: 'TOKEN_AUDIENCE_INVALID',
     });
+  });
+
+  it('accepts a BPA mobile audience and client id when explicitly configured', async () => {
+    const token = signToken({
+      sub: 'user-123',
+      iss: issuer,
+      aud: 'bpa-mobile',
+      exp: Math.floor(now / 1000) + 300,
+      iat: Math.floor(now / 1000) - 10,
+      client_id: 'bpa-mobile',
+    });
+
+    const principal = await verifierWithKey(undefined, {
+      audience: ['furtail-mobile', 'bpa-mobile'],
+      clientId: ['furtail-mobile', 'bpa-mobile'],
+    }).verifyAccessToken(token);
+
+    expect(principal.sub).toBe('user-123');
+    expect(principal.audience).toBe('bpa-mobile');
+    expect(principal.clientId).toBe('bpa-mobile');
+  });
+
+  it('accepts a BPA mobile token with no client_id by falling back to aud', async () => {
+    const token = signToken({
+      sub: 'user-123',
+      iss: issuer,
+      aud: 'bpa-mobile',
+      exp: Math.floor(now / 1000) + 300,
+      iat: Math.floor(now / 1000) - 10,
+    });
+
+    const principal = await verifierWithKey(undefined, {
+      audience: ['furtail-mobile', 'bpa-mobile'],
+      clientId: ['furtail-mobile', 'bpa-mobile'],
+      requiredClaims: ['sub', 'iss', 'aud', 'exp', 'iat'],
+    }).verifyAccessToken(token);
+
+    expect(principal.sub).toBe('user-123');
+    expect(principal.audience).toBe('bpa-mobile');
+    expect(principal.clientId).toBe('bpa-mobile');
+  });
+
+  it('rejects an unconfigured audience even when another audience is allowed', async () => {
+    const token = signToken({
+      sub: 'user-123',
+      iss: issuer,
+      aud: 'unconfigured-mobile',
+      exp: Math.floor(now / 1000) + 300,
+      iat: Math.floor(now / 1000) - 10,
+      client_id: 'unconfigured-mobile',
+    });
+
+    await expect(
+      verifierWithKey(undefined, {
+        audience: ['furtail-mobile', 'bpa-mobile'],
+        clientId: ['furtail-mobile', 'bpa-mobile'],
+      }).verifyAccessToken(token),
+    ).rejects.toMatchObject({ code: 'TOKEN_AUDIENCE_INVALID' });
+  });
+
+  it('rejects an unconfigured client id even when the audience is allowed', async () => {
+    const token = signToken({
+      sub: 'user-123',
+      iss: issuer,
+      aud: 'bpa-mobile',
+      exp: Math.floor(now / 1000) + 300,
+      iat: Math.floor(now / 1000) - 10,
+      client_id: 'unconfigured-mobile',
+    });
+
+    await expect(
+      verifierWithKey(undefined, {
+        audience: ['furtail-mobile', 'bpa-mobile'],
+        clientId: ['furtail-mobile', 'bpa-mobile'],
+      }).verifyAccessToken(token),
+    ).rejects.toMatchObject({ code: 'AUTHENTICATION_INVALID' });
   });
 
   it('rejects an expired token', async () => {

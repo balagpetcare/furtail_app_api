@@ -3,6 +3,8 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { AppError } from '../core/errors/app-error';
 import type { AuthenticatedPrincipal, TokenVerifier } from './principal';
 import { hasPermission, hasRole, isOwner } from './authorization';
+import { logger } from '../shared/logger';
+import { decodeJwtDiagnostics } from './jwt-verifier';
 
 export interface AuthMiddlewareOptions {
   verifier: TokenVerifier;
@@ -18,11 +20,12 @@ export function requiredAuth(options: AuthMiddlewareOptions): RequestHandler {
       req.principal = await options.verifier.verifyAccessToken(token);
       next();
     } catch (error) {
-      next(
+      const appError =
         error instanceof AppError
           ? error
-          : AppError.authenticationInvalid('Invalid or expired access token'),
-      );
+          : AppError.authenticationInvalid('Authentication failed');
+      logAuthFailure(req, appError);
+      next(appError);
     }
   };
 }
@@ -39,11 +42,12 @@ export function optionalAuth(options: AuthMiddlewareOptions): RequestHandler {
       req.principal = await options.verifier.verifyAccessToken(token);
       next();
     } catch (error) {
-      next(
+      const appError =
         error instanceof AppError
           ? error
-          : AppError.authenticationInvalid('Invalid or expired access token'),
-      );
+          : AppError.authenticationInvalid('Authentication failed');
+      logAuthFailure(req, appError);
+      next(appError);
     }
   };
 }
@@ -91,4 +95,29 @@ function readBearerToken(header: string | string[] | undefined): string | undefi
   if (!header.startsWith('Bearer ')) return undefined;
   const token = header.slice('Bearer '.length).trim();
   return token.length > 0 ? token : undefined;
+}
+
+function logAuthFailure(req: Request, error: AppError): void {
+  const token = readBearerToken(req.headers.authorization);
+  let diagnostics: ReturnType<typeof decodeJwtDiagnostics> | undefined;
+  if (token) {
+    try {
+      diagnostics = decodeJwtDiagnostics(token);
+    } catch {
+      diagnostics = undefined;
+    }
+  }
+
+  logger.warn(
+    {
+      requestId: req.requestId,
+      correlationId: req.correlationId,
+      method: req.method,
+      path: req.originalUrl,
+      errorCode: error.code,
+      errorMessage: error.message,
+      jwt: diagnostics,
+    },
+    'authentication rejected',
+  );
 }

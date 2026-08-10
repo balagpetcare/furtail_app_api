@@ -231,12 +231,6 @@ interface DraftView {
   status: string;
 }
 
-interface CampaignPayloadView {
-  id: number;
-  publicId: string;
-  status: string;
-}
-
 /**
  * Reproduces the exact restart-collision this fix addresses: the database
  * already holds fundraising_campaign_drafts/fundraising_campaigns rows at

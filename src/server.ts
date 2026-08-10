@@ -5,7 +5,23 @@ import { logger } from './shared/logger';
 const app = createApp();
 
 const server = app.listen(env.PORT, () => {
-  logger.info({ port: env.PORT, env: env.NODE_ENV, service: env.SERVICE_NAME }, 'server started');
+  logger.info(
+    {
+      port: env.PORT,
+      env: env.NODE_ENV,
+      service: env.SERVICE_NAME,
+      dotenvPath: `${process.cwd()}\\.env`,
+      authVerifier: {
+        issuer: env.CENTRAL_AUTH_ISSUER,
+        jwksUri: env.CENTRAL_AUTH_JWKS_URI,
+        allowedAudiences: env.CENTRAL_AUTH_ALLOWED_AUDIENCES,
+        allowedClientIds: env.CENTRAL_AUTH_ALLOWED_CLIENT_IDS,
+        hasAllowedAudiencesEnv: Boolean(process.env.CENTRAL_AUTH_ALLOWED_AUDIENCES),
+        hasAllowedClientIdsEnv: Boolean(process.env.CENTRAL_AUTH_ALLOWED_CLIENT_IDS),
+      },
+    },
+    'server started',
+  );
 });
 
 // Defense in depth alongside the per-request timeout middleware in app.ts:

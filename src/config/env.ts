@@ -16,7 +16,9 @@ const envSchema = z.object({
   DATABASE_URL: z.string().trim().optional().default(''),
   CENTRAL_AUTH_ISSUER: z.string().trim().optional().default(''),
   CENTRAL_AUTH_AUDIENCE: z.string().trim().default('furtail-mobile'),
+  CENTRAL_AUTH_ALLOWED_AUDIENCES: z.string().trim().optional().default(''),
   CENTRAL_AUTH_CLIENT_ID: z.string().trim().default('furtail-mobile'),
+  CENTRAL_AUTH_ALLOWED_CLIENT_IDS: z.string().trim().optional().default(''),
   CENTRAL_AUTH_JWKS_URI: z.string().trim().optional().default(''),
   CENTRAL_AUTH_JWT_SECRET: z.string().trim().optional().default(''),
   CENTRAL_AUTH_REQUIRED_CLAIMS: z
@@ -95,7 +97,9 @@ export type Env = {
   DATABASE_URL: string;
   CENTRAL_AUTH_ISSUER: string;
   CENTRAL_AUTH_AUDIENCE: string;
+  CENTRAL_AUTH_ALLOWED_AUDIENCES: string[];
   CENTRAL_AUTH_CLIENT_ID: string;
+  CENTRAL_AUTH_ALLOWED_CLIENT_IDS: string[];
   CENTRAL_AUTH_JWKS_URI: string;
   CENTRAL_AUTH_JWT_SECRET: string;
   CENTRAL_AUTH_REQUIRED_CLAIMS: string[];
@@ -154,6 +158,16 @@ function loadEnv(): Env {
     process.exit(1);
   }
   const parsed = result.data;
+  const allowedAudiences = parseConfiguredList(
+    'CENTRAL_AUTH_ALLOWED_AUDIENCES',
+    parsed.CENTRAL_AUTH_ALLOWED_AUDIENCES,
+    parsed.CENTRAL_AUTH_AUDIENCE,
+  );
+  const allowedClientIds = parseConfiguredList(
+    'CENTRAL_AUTH_ALLOWED_CLIENT_IDS',
+    parsed.CENTRAL_AUTH_ALLOWED_CLIENT_IDS,
+    parsed.CENTRAL_AUTH_CLIENT_ID,
+  );
 
   if (parsed.NODE_ENV === 'production') {
     const missing: string[] = [];
@@ -185,7 +199,24 @@ function loadEnv(): Env {
     }
   }
 
-  return parsed;
+  return {
+    ...parsed,
+    CENTRAL_AUTH_ALLOWED_AUDIENCES: allowedAudiences,
+    CENTRAL_AUTH_ALLOWED_CLIENT_IDS: allowedClientIds,
+  };
 }
 
 export const env: Env = loadEnv();
+
+function parseConfiguredList(name: string, rawValue: string, fallback: string): string[] {
+  const raw = rawValue.trim();
+  const source = raw.length > 0 ? raw : fallback.trim();
+  const values = source.split(',').map((value) => value.trim());
+  if (values.length === 0 || values.some((value) => value.length === 0)) {
+    console.error(
+      `Environment validation failed:\n  - ${name}: must contain one or more non-empty comma-separated values`,
+    );
+    process.exit(1);
+  }
+  return [...new Set(values)];
+}

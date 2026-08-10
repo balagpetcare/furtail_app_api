@@ -30,10 +30,27 @@ interface JwtParts {
   signature: Buffer;
 }
 
+export interface SafeJwtDiagnostics {
+  header: {
+    alg?: string;
+    kid?: string;
+    typ?: string;
+  };
+  claims: {
+    iss?: string;
+    aud?: string | string[];
+    azp?: string;
+    client_id?: string;
+    sub?: string;
+    iat?: number;
+    exp?: number;
+  };
+}
+
 export interface JwtVerifierConfig {
   issuer: string;
-  audience: string;
-  clientId: string;
+  audience: string | string[];
+  clientId: string | string[];
   jwksUri: string;
   jwtSecret?: string;
   requiredClaims: string[];
@@ -135,8 +152,8 @@ export class CentralAuthJwtVerifier implements TokenVerifier {
 export function createCentralAuthVerifier(): TokenVerifier {
   return new CentralAuthJwtVerifier({
     issuer: env.CENTRAL_AUTH_ISSUER,
-    audience: env.CENTRAL_AUTH_AUDIENCE,
-    clientId: env.CENTRAL_AUTH_CLIENT_ID,
+    audience: env.CENTRAL_AUTH_ALLOWED_AUDIENCES,
+    clientId: env.CENTRAL_AUTH_ALLOWED_CLIENT_IDS,
     jwksUri: env.CENTRAL_AUTH_JWKS_URI,
     jwtSecret: env.CENTRAL_AUTH_JWT_SECRET || undefined,
     requiredClaims: env.CENTRAL_AUTH_REQUIRED_CLAIMS,
@@ -149,6 +166,29 @@ export function createCentralAuthVerifier(): TokenVerifier {
       return (await response.json()) as JwksResponse;
     },
   });
+}
+
+export function decodeJwtDiagnostics(token: string): SafeJwtDiagnostics {
+  const parts = parseJwt(token);
+  return {
+    header: {
+      alg: typeof parts.header.alg === 'string' ? parts.header.alg : undefined,
+      kid: typeof parts.header.kid === 'string' ? parts.header.kid : undefined,
+      typ: typeof parts.header.typ === 'string' ? parts.header.typ : undefined,
+    },
+    claims: {
+      iss: typeof parts.payload.iss === 'string' ? parts.payload.iss : undefined,
+      aud:
+        typeof parts.payload.aud === 'string' || Array.isArray(parts.payload.aud)
+          ? normalizeAudience(parts.payload.aud)
+          : undefined,
+      azp: typeof parts.payload.azp === 'string' ? parts.payload.azp : undefined,
+      client_id: typeof parts.payload.client_id === 'string' ? parts.payload.client_id : undefined,
+      sub: typeof parts.payload.sub === 'string' ? parts.payload.sub : undefined,
+      iat: typeof parts.payload.iat === 'number' ? parts.payload.iat : undefined,
+      exp: typeof parts.payload.exp === 'number' ? parts.payload.exp : undefined,
+    },
+  };
 }
 
 function parseJwt(token: string): JwtParts {
@@ -226,9 +266,11 @@ function assertClaimMatches(name: string, actual: string, expected: string): voi
   }
 }
 
-function assertAudience(aud: unknown, expected: string): void {
-  const values = normalizeAudience(aud);
-  if (expected.length > 0 && !values.includes(expected)) {
+function assertAudience(aud: unknown, expected: string | string[]): void {
+  const normalized = normalizeAudience(aud);
+  const values = Array.isArray(normalized) ? normalized : [normalized];
+  const allowed = normalizeExpectedValues(expected);
+  if (allowed.length > 0 && !values.some((value) => allowed.includes(value))) {
     throw AppError.tokenAudienceInvalid('Invalid audience claim');
   }
 }
@@ -243,10 +285,15 @@ function normalizeAudience(aud: unknown): string | string[] {
   throw AppError.authenticationInvalid('Missing or invalid aud claim');
 }
 
-function assertClientId(actual: string, expected: string): void {
-  if (expected.length > 0 && actual !== expected) {
+function assertClientId(actual: string, expected: string | string[]): void {
+  const allowed = normalizeExpectedValues(expected);
+  if (allowed.length > 0 && !allowed.includes(actual)) {
     throw AppError.authenticationInvalid('Invalid client_id claim');
   }
+}
+
+function normalizeExpectedValues(expected: string | string[]): string[] {
+  return Array.isArray(expected) ? expected : [expected].filter((value) => value.length > 0);
 }
 
 function assertNotExpired(exp: number, nowSeconds: number, toleranceSeconds: number): void {
