@@ -2,9 +2,125 @@
 
 **Job ID**: FURTAIL-PHASE-3-SOCIAL
 **Created**: 2026-08-18
-**Status**: UNBLOCKED — git isolation complete; ready for Phase 3B implementation as its own job
-**Blocked By**: (resolved — see "Dirty Tree Isolation" below)
-**Estimated Duration**: TBD (after exact migration scope verification)
+**Status**: 🟡 PHASE 3B PERSISTENT POST VERTICAL SLICE COMPLETE (development-verified) — see
+"Phase 3B Implementation" below. Not yet deployed to any shared/staging/production
+environment; not yet code-reviewed by a human; several explicitly out-of-scope
+gaps remain (listed below) as intentional, documented follow-up work.
+**Blocked By**: nothing currently blocking
+**Estimated Duration**: Phase 3B took one continuous session once the dirty-tree
+isolation blocker was resolved.
+
+---
+
+## PHASE 3B IMPLEMENTATION (2026-08-18, third Mega Job run)
+
+### What was built
+
+**Backend** (`furtail_app_api`, branch `feature/persistent-social-core`, commit `1ad464b`):
+- Post/PostMedia/PostTaggedPet now persist to Prisma/PostgreSQL when
+  `DATABASE_URL` is configured — create, read, feed, update, soft-delete.
+  Falls back to the pre-existing in-memory behavior, unchanged, when it isn't.
+- Migration `20260818150000_add_post_persistence_and_tagged_pets`: adds
+  `Post.createIdempotencyKey` (nullable) + `@@unique([authorId,
+  createIdempotencyKey])`, mirroring Media's existing pattern; adds a new
+  `PostTaggedPet` join table (`taggedPetIds` had no persistent representation
+  before this).
+- Idempotency is durable and concurrency-safe: the database unique constraint
+  is what resolves a race between two identical-key requests, not an
+  in-process check-then-write. Verified with a 5-concurrent-request test that
+  produces exactly one Post row. Same key + a different payload is rejected
+  with HTTP 409 (fingerprint comparison against the persisted post's own
+  fields — no extra storage needed).
+- Media validation (existence, ownership, `status === 'READY'`,
+  de-duplication, 10-item cap) now checks the real Media table, not just
+  in-memory state. Media order persists via `PostMedia.position` and
+  round-trips exactly as submitted.
+- New test file `tests/post-persistence.integration.test.ts`, 18 tests, all
+  passing. Full backend suite: 356/357 (the one failure,
+  `tests/pets.integration.test.ts`'s duplicate-follow test, is confirmed
+  pre-existing — reproduces identically with these changes stashed out).
+
+**Web** (`furtail_web`, branch `feature/persistent-social-core`, commit `8ac606b`):
+- `create-post-modal.tsx` now owns a stable idempotency key per draft (a
+  `useRef`, generated lazily on first submit, reused across retries, reset on
+  success or on reopening the composer). `postsApi.createPost` passes it
+  through explicitly, bypassing (not removing) `fetchApi`'s generic
+  per-POST-request UUID fallback that every other endpoint still relies on.
+- 4 new tests in `src/lib/api/posts-create-idempotency.test.ts`. Full web
+  suite: 94/94 passing. `tsc --noEmit` clean. Production build succeeds.
+  ESLint: 95 pre-existing errors project-wide (all `no-explicit-any`, none on
+  changed lines).
+
+**Flutter** (`furtail_app`, branch `feature/persistent-social-core`, commit `e88c041`):
+- `PostsRemoteDs.createPost()` gained an `idempotencyKey` parameter (it had
+  none at all on the clean baseline) and sends it via the same
+  `Idempotency-Key` header convention the upload methods already use.
+- `PostUploadManager` passes `task.id` through as that key — already a
+  stable, client-generated id assigned once per task and explicitly carried
+  forward unchanged by `retry()`'s task reconstruction, so no new state was
+  needed to get "one key per logical operation, new key per genuinely new
+  operation" semantics.
+- **Not covered by an automated test**: `createPost()` calls the top-level
+  `http.post()` function directly rather than an injectable `http.Client`,
+  so intercepting request headers would require a client-injection refactor
+  beyond this change's scope. `flutter analyze` and the existing posts test
+  suite are both clean/passing.
+
+### What was deliberately left out of scope
+
+- `getMediaViaOrigin()` and the `listComments`/`listReplies` pagination
+  rewrite — found entangled in the pre-existing dirty tree, unrelated to Post
+  persistence, left for their own review (see `wip/pre-phase3-snapshot-20260818`).
+- `likeCount`/`commentCount`/`isLikedByMe`/`isBookmarkedByMe`/
+  `isFollowingAuthor`/`isReportedByMe` in the Post payload are still computed
+  from in-memory Like/Comment/Bookmark/Follow/Report state. Only the Post's
+  own fields and its media are restart-safe — these derived fields reset to
+  0/false after a restart for every post, old and new alike. Migrating them
+  would mean migrating those other modules too, explicitly out of scope for
+  "the minimum vertical slice."
+- Feed restart-safety is proven within a bounded 1000-post hydration window
+  (`SocialCoreStore.FEED_HYDRATION_LIMIT`), not for arbitrarily deep cursor
+  pagination after a cold start. A fully SQL-native feed query (bypassing the
+  in-memory cache and its dependency on in-memory Follow/Block data for
+  visibility) is future work.
+- `whoCanComment` consolidation: untouched, as instructed.
+- Web's component-level idempotency-key-reuse behavior (the `useRef` logic in
+  `create-post-modal.tsx`) has no automated test — this project has no React
+  component test harness configured. Only the `postsApi.createPost` →
+  `fetchApi` header-passthrough contract boundary is tested.
+- Discovery/suggestions/relationship-count endpoints, friend-request Prisma
+  wiring, `/posts/trending`, `resolvePostIdParam`, and the entire messaging/
+  presence/realtime/search/notifications module bodies remain only in
+  `wip/pre-phase3-snapshot-20260818` — substantial, apparently-legitimate
+  prior work that this job explicitly was told not to bring in.
+
+### Media status (PROCESSING) policy — evidence
+
+Traced on the clean branch (not the not-yet-merged async media-processing
+queue found in the WIP snapshot): `src/modules/media/media-storage.ts`
+uploads are synchronous and always set `status: 'READY'` immediately — no
+code path on this branch ever produces `PROCESSING`. The implemented rule
+(reject anything that isn't `READY`) is therefore both correct for current
+behavior and forward-compatible: if/when the async BullMQ-based image/video
+pipeline visible in the WIP snapshot is merged, `PROCESSING` becomes reachable
+and posts will correctly be required to wait for it — no further code change
+needed in the Post-creation path itself.
+
+### Verification performed this run
+
+- Backend: `npx tsc --noEmit`, `npx eslint` (1 error found and fixed —
+  `preserve-caught-error`), `npx prisma validate`, migration applied to both
+  the local dev DB and the dedicated test DB via `migrate deploy` (not `dev`
+  — the DB user lacks shadow-database CREATE permission, and `dev`'s
+  diff-based approach would additionally have tried to drop unrelated tables
+  already present in both databases from the WIP's separately-applied
+  migrations), full Jest suite run twice (parallel and `--runInBand`) to
+  distinguish real regressions from pre-existing parallel-worker DB
+  contention flakiness.
+- Web: `tsc --noEmit`, `eslint .`, `npm test` (94/94), `npm run build`.
+- Flutter: `flutter analyze`, `flutter test test/features/posts/`.
+- No destructive database commands were run. No production database was
+  touched. Nothing was pushed to any remote.
 
 ---
 

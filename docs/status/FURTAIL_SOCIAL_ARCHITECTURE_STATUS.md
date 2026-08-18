@@ -1,14 +1,21 @@
 # FURTAIL SOCIAL ARCHITECTURE — CURRENT STATUS
 
-**Last Updated**: 2026-08-18 (Mega Job Phase 3A investigation)
-**Repository State**: `furtail_app_api` working tree has 38 modified files; only
-`social-store.ts` is confirmed to contain solely the documented Phase 2 diff.
-`social.routes.ts` has a 1088-line diff, ~90% of which is unrelated, unreviewed,
-uncommitted feature work (discovery/suggestions/relationship-count endpoints).
-**Overall Status**: 🔴 NOT PRODUCTION READY — BLOCKED BY PRISMA MIGRATION AND BY
-unrelated uncommitted work entangled in the persistence-slice route file. See
-`docs/jobs/FURTAIL_PHASE_3_PERSISTENT_SOCIAL_CORE_JOB.md` § Phase 3A Investigation
-Findings for full evidence and the decision needed to unblock.
+**Last Updated**: 2026-08-18 (Phase 3B implementation run)
+**Repository State**: Persistent Post vertical slice implemented and committed
+on `feature/persistent-social-core` in all three repos (`furtail_app_api`
+`1ad464b`, `furtail_web` `8ac606b`, `furtail_app` `e88c041`). Pre-existing
+entangled WIP (messaging/presence/realtime/search/discovery/relationship-count
+work) safely preserved, untouched, on `wip/pre-phase3-snapshot-20260818` in
+each repo — not part of this slice.
+**Overall Status**: 🟡 DEVELOPMENT READY, NOT YET PRODUCTION READY. Posts,
+their media, and create-idempotency now genuinely persist to Prisma/PostgreSQL
+and survive a process restart — verified by integration tests that construct a
+fresh store instance. Not production-ready because: no human code review yet,
+not deployed/verified against any staging or production database, and several
+explicitly-scoped-out gaps remain (likeCount/commentCount/etc. still reset on
+restart; feed restart-safety is bounded to the 1000 most recent posts; see
+`docs/jobs/FURTAIL_PHASE_3_PERSISTENT_SOCIAL_CORE_JOB.md` § Phase 3B
+Implementation for the complete list and reasoning).
 
 ---
 
