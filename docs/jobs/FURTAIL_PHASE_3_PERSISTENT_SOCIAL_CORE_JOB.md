@@ -2,9 +2,52 @@
 
 **Job ID**: FURTAIL-PHASE-3-SOCIAL
 **Created**: 2026-08-18
-**Status**: BLOCKED — see "Phase 3A Investigation Findings" below
-**Blocked By**: Uncommitted, unrelated feature work entangled in the exact files Phase 3B must edit
-**Estimated Duration**: TBD (after Phase 3A investigation and exact migration scope verification)
+**Status**: UNBLOCKED — git isolation complete; ready for Phase 3B implementation as its own job
+**Blocked By**: (resolved — see "Dirty Tree Isolation" below)
+**Estimated Duration**: TBD (after exact migration scope verification)
+
+---
+
+## DIRTY TREE ISOLATION (2026-08-18, follow-up Mega Job run)
+
+The blocker recorded above (unrelated uncommitted work entangled in
+`social.routes.ts`) is resolved. Summary — full detail in the session's final
+report:
+
+- **WIP preservation branch**: `wip/pre-phase3-snapshot-20260818`
+  - **Snapshot commit**: `7e9ebd3a82de62743cc96d7f92ef1dba2ae3640a`
+  - Contains all 114 previously-uncommitted files (messaging, presence,
+    realtime, search, notifications, relationships/discovery modules, their
+    Prisma migrations, and the full pre-Phase-3 `social.routes.ts`). Marked
+    explicitly as an unreviewed preservation snapshot, not production-ready.
+  - Excluded from the snapshot (preserved instead in
+    `D:\tmp\furtail_backup_20260818_134721\excluded_from_wip\`, not git):
+    `.tmp-dscc-location-live.html`, `D:tmpfilelist.txt`, `scratch/`,
+    `test_search.ts`, and the untracked `.media-store/` runtime upload tree.
+- **Clean authoritative base**: `ae30418` (`chore: sync latest project
+  updates`) — verified to predate both the Phase 2 idempotency work and the
+  messaging/discovery WIP (`git ls-tree ae30418 | grep messaging` → empty).
+- **Phase 3 branch**: `feature/persistent-social-core`, branched from
+  `81cf0e3` (= `ae30418` + the two docs-only commits, verified to contain
+  nothing else). Commit `35f8fd1` on top re-adds only the narrowly-scoped
+  Phase 2 prerequisite hunks (see below). `git diff ae30418
+  feature/persistent-social-core --stat` touches exactly 4 files: the two
+  docs files plus `social-store.ts` (+61/-5) and `social.routes.ts` (+7/-0).
+  `tests/social.integration.test.ts` passes on this branch (9/9).
+
+### Phase 2 changes: retained / dropped / reimplement
+
+| Change | Disposition | Reasoning |
+|---|---|---|
+| `SocialPostUpsertInput.idempotencyKey` field | **KEEP** (retained as-is on `feature/persistent-social-core`) | Contract-compatible, no persistence dependency |
+| `postCreationIdempotencyKeys` in-memory `Map` | **KEEP for now, REIMPLEMENT in Phase 3B** | Correct logic, wrong storage medium — not restart-safe or multi-instance-safe. Phase 3B must move this to a durable, user+operation-scoped store per the original job spec's idempotency design section |
+| `createPost`/`updatePost` media ownership validation | **KEEP for now, REIMPLEMENT in Phase 3B** | Validates against `this.media` (in-memory), not Prisma. Logic is correct; Phase 3B must re-target it at persisted Media rows |
+| `POST /api/v1/posts` Idempotency-Key header extraction | **KEEP as-is** | Isolated, correct, no persistence dependency; reusable unchanged |
+| `SocialCoreStore.getMediaViaOrigin()` | **DROPPED from this slice** | Unrelated fundraising-KYC media feature found entangled in the same file; out of scope, left for its own review/commit off `wip/pre-phase3-snapshot-20260818` |
+| `listComments()`/`listReplies()` pagination rewrite | **DROPPED from this slice** | Legitimate-looking bugfix but unrelated to Post persistence; out of scope, left for its own review/commit |
+| Flutter `posts_remote_ds.dart` UUID-per-call | **DROPPED — will not be reused** | Confirmed broken (generates a new key every call, defeating retry semantics). Phase 3B must move key ownership to the logical create-post draft/operation boundary in the Flutter repo, per the original job spec's idempotency design section. Original file preserved unmodified in `furtail_app` working tree and in the external backup |
+| Web `api-client.ts` per-POST-request UUID | **DROPPED — will not be reused** | Same defect as Flutter, in the other client. Not touched in this run |
+| Discovery/suggestions/relationship-count endpoints, friend-request Prisma wiring, `/posts/trending`, `resolvePostIdParam` | **Left in WIP snapshot only** | Substantial, apparently-legitimate feature work but outside this job's scope; requires its own review before being committed to a real branch |
 
 ---
 
