@@ -198,6 +198,12 @@ function mapError(error: unknown, fallbackMessage: string): AppError {
   if (message.includes('Report type is required')) return AppError.validation(message);
   if (message.includes('Report reason is required')) return AppError.validation(message);
   if (message.includes('Invalid target')) return AppError.validation(message);
+  if (message.includes('Idempotency key already used')) return AppError.conflict(message);
+  if (message.includes('Invalid media reference')) return AppError.validation(message);
+  if (message.includes('Media is not owned by the current user'))
+    return AppError.authorizationDenied(message);
+  if (message.includes('is not ready (status:')) return AppError.validation(message);
+  if (message.includes('may not have more than')) return AppError.validation(message);
   return AppError.internal(fallbackMessage);
 }
 
@@ -918,7 +924,7 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     asyncHandler(async (req, res) => {
       const viewerId = await readUserId(req, store);
       const limit = toOptionalPositiveInt(req.query.limit) ?? 50;
-      sendSuccess(res, store.listFeed(viewerId, limit, req.query.cursor), {
+      sendSuccess(res, await store.listFeed(viewerId, limit, req.query.cursor), {
         requestId: req.requestId,
         correlationId: req.correlationId,
       });
@@ -1039,7 +1045,7 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
           normalizeContentField(req.body?.idempotencyKey) ||
           undefined;
 
-        const post = store.createPost(viewerId, {
+        const post = await store.createPost(viewerId, {
           caption: req.body?.caption,
           type: req.body?.type,
           category: req.body?.category,
@@ -1082,7 +1088,7 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       const viewerId = await readUserId(req, store);
       const postId = toPositiveInt(req.params.postId, 'postId');
       try {
-        sendSuccess(res, store.getPostById(viewerId, postId), {
+        sendSuccess(res, await store.getPostById(viewerId, postId), {
           requestId: req.requestId,
           correlationId: req.correlationId,
         });
@@ -1101,7 +1107,7 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       try {
         sendSuccess(
           res,
-          store.updatePost(viewerId, postId, {
+          await store.updatePost(viewerId, postId, {
             caption: req.body?.caption,
             type: req.body?.type,
             category: req.body?.category,
@@ -1142,7 +1148,7 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       const viewerId = await readUserId(req, store);
       const postId = toPositiveInt(req.params.postId, 'postId');
       try {
-        sendSuccess(res, store.deletePost(viewerId, postId), {
+        sendSuccess(res, await store.deletePost(viewerId, postId), {
           requestId: req.requestId,
           correlationId: req.correlationId,
         });
@@ -1262,7 +1268,7 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       const postId = toPositiveInt(req.params.postId, 'postId');
       try {
         if (prisma) {
-          const post = store.getPostById(viewerId, postId);
+          const post = await store.getPostById(viewerId, postId);
           const authorId = (post.author as { id?: number })?.id;
           if (authorId && authorId !== viewerId) {
             const authorProfile = await prisma.userProfile.findUnique({

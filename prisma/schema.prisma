@@ -236,6 +236,14 @@ model Post {
   shareCount            Int            @default(0)
   viewCount             Int            @default(0)
   status                PostStatus     @default(ACTIVE)
+  // Client-supplied key for POST /api/v1/posts retry safety: the same
+  // (authorId, key) pair returns the original Post instead of creating a
+  // duplicate. Unique constraint is the concurrency-safe enforcement
+  // mechanism — two simultaneous requests racing on insert are resolved by
+  // the database, not by an in-process check-then-write. Null is excluded
+  // from the constraint (Postgres treats each NULL as distinct), so legacy
+  // requests without a key are never deduplicated against each other.
+  createIdempotencyKey  String?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
   author                User           @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
@@ -245,7 +253,9 @@ model Post {
   media                 PostMedia[]
   shares                PostShare[]
   views                 PostView[]
+  taggedPets            PostTaggedPet[]
 
+  @@unique([authorId, createIdempotencyKey])
   @@index([authorId, createdAt])
   @@index([privacy, status, createdAt])
   @@index([category, type, createdAt])
@@ -261,6 +271,17 @@ model PostMedia {
 
   @@unique([postId, mediaId])
   @@index([postId, position])
+}
+
+model PostTaggedPet {
+  id     Int  @id @default(autoincrement())
+  postId Int
+  petId  Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  pet    Pet  @relation("PetTaggedInPosts", fields: [petId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, petId])
+  @@index([petId])
 }
 
 model PostLike {
@@ -702,6 +723,7 @@ model Pet {
   follows                   PetFollow[]
   likes                     PetLike[]
   createIdempotencyKeys     PetCreateIdempotencyKey[]
+  taggedInPosts             PostTaggedPet[]           @relation("PetTaggedInPosts")
 
   @@unique([ownerUserId, microchipNumber])
   @@index([ownerUserId, status, createdAt])

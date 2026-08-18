@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import type { MediaStatus, PrismaClient } from '@prisma/client';
 import type {
   MediaStorageAdapter,
@@ -235,6 +236,164 @@ function toPublicMediaStatus(status: MediaStatus): 'READY' | 'PROCESSING' | 'FAI
     default:
       return 'FAILED';
   }
+}
+
+/** Matches common social-platform norms (Instagram/Facebook allow ~10). */
+const MAX_POST_MEDIA_ITEMS = 10;
+
+interface PersistedPostRow {
+  id: number;
+  authorId: number;
+  type: string;
+  category: string;
+  caption: string | null;
+  context: string | null;
+  privacy: string;
+  backgroundStyle: string | null;
+  postType: string | null;
+  lostPetName: string | null;
+  lostPetLocation: string | null;
+  lostPetContactVisible: boolean;
+  locationTag: string | null;
+  feelingId: string | null;
+  feelingLabel: string | null;
+  feelingEmoji: string | null;
+  activityId: string | null;
+  activityLabel: string | null;
+  activityEmoji: string | null;
+  songTitle: string | null;
+  songArtist: string | null;
+  songStartMs: number | null;
+  songDurationMs: number | null;
+  fundraisingCampaignId: number | null;
+  shareCount: number;
+  viewCount: number;
+  status: string;
+  createIdempotencyKey: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  media: { position: number; media: Parameters<typeof mapMediaRowToRecord>[0] }[];
+  taggedPets: { petId: number }[];
+}
+
+/**
+ * PostMedia rows arrive in whatever order Prisma returns them in unless
+ * explicitly ordered by the caller's `orderBy` — this function is the single
+ * place that imposes `position` order on the mapped id list, so every
+ * caller (fresh load, cache-miss reload after restart) gets identical
+ * ordering regardless of query shape.
+ */
+function mapPostRowToRecord(row: PersistedPostRow): PostRecord {
+  return {
+    id: row.id,
+    authorId: row.authorId,
+    type: row.type as PostType,
+    category: row.category as PostCategory,
+    caption: row.caption,
+    context: row.context,
+    privacy: row.privacy as PostPrivacy,
+    backgroundStyle: row.backgroundStyle,
+    postType: row.postType,
+    lostPetName: row.lostPetName,
+    lostPetLocation: row.lostPetLocation,
+    lostPetContactVisible: row.lostPetContactVisible,
+    locationTag: row.locationTag,
+    feelingId: row.feelingId,
+    feelingLabel: row.feelingLabel,
+    feelingEmoji: row.feelingEmoji,
+    activityId: row.activityId,
+    activityLabel: row.activityLabel,
+    activityEmoji: row.activityEmoji,
+    songTitle: row.songTitle,
+    songArtist: row.songArtist,
+    songStartMs: row.songStartMs,
+    songDurationMs: row.songDurationMs,
+    fundraisingCampaignId: row.fundraisingCampaignId,
+    mediaIds: [...row.media].sort((a, b) => a.position - b.position).map((m) => m.media.id),
+    taggedPetIds: row.taggedPets.map((t) => t.petId),
+    shareCount: row.shareCount,
+    viewCount: row.viewCount,
+    status: row.status as 'ACTIVE' | 'DELETED',
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+const POST_PERSISTENCE_INCLUDE = {
+  // Full Media row (not just the id) so callers can warm the media cache
+  // in the same query — without this, serializePost's mediaPayload() would
+  // hit a cache miss (and throw "Media not found") for any post loaded
+  // fresh from Prisma after a cold start, since the media cache and the
+  // post cache are otherwise populated independently.
+  media: { select: { position: true, media: true } },
+  taggedPets: { select: { petId: true } },
+} as const;
+
+interface PostCreateFields {
+  caption: string | null;
+  type: PostType;
+  category: PostCategory;
+  privacy: PostPrivacy;
+  backgroundStyle: string | null;
+  postType: string | null;
+  lostPetName: string | null;
+  lostPetLocation: string | null;
+  lostPetContactVisible: boolean;
+  mediaIds: number[];
+  taggedPetIds: number[];
+  songTitle: string | null;
+  songArtist: string | null;
+  songStartMs: number | null;
+  songDurationMs: number | null;
+  locationTag: string | null;
+  feelingId: string | null;
+  feelingLabel: string | null;
+  feelingEmoji: string | null;
+  activityId: string | null;
+  activityLabel: string | null;
+  activityEmoji: string | null;
+}
+
+/**
+ * Deterministic representation of "what this Create Post request would
+ * produce", used to detect the case the idempotency design explicitly
+ * calls out: same user + same key + a genuinely different payload. Built
+ * from already-persisted/already-known fields rather than a separately
+ * stored hash, so there's no extra schema surface to keep in sync.
+ */
+function buildPostFingerprint(fields: PostCreateFields): string {
+  return JSON.stringify({
+    ...fields,
+    mediaIds: [...fields.mediaIds].sort((a, b) => a - b),
+    taggedPetIds: [...fields.taggedPetIds].sort((a, b) => a - b),
+  });
+}
+
+function fingerprintFromPostRecord(post: PostRecord): string {
+  return buildPostFingerprint({
+    caption: post.caption,
+    type: post.type,
+    category: post.category,
+    privacy: post.privacy,
+    backgroundStyle: post.backgroundStyle,
+    postType: post.postType,
+    lostPetName: post.lostPetName,
+    lostPetLocation: post.lostPetLocation,
+    lostPetContactVisible: post.lostPetContactVisible,
+    mediaIds: post.mediaIds,
+    taggedPetIds: post.taggedPetIds,
+    songTitle: post.songTitle,
+    songArtist: post.songArtist,
+    songStartMs: post.songStartMs,
+    songDurationMs: post.songDurationMs,
+    locationTag: post.locationTag,
+    feelingId: post.feelingId,
+    feelingLabel: post.feelingLabel,
+    feelingEmoji: post.feelingEmoji,
+    activityId: post.activityId,
+    activityLabel: post.activityLabel,
+    activityEmoji: post.activityEmoji,
+  });
 }
 
 interface UserRecord {
@@ -1811,44 +1970,70 @@ export class SocialCoreStore {
     };
   }
 
-  createPost(userId: number, input: SocialPostUpsertInput): SocialPostPayload {
-    // Idempotency: check if this exact post creation already exists
-    const idempotencyKey = input.idempotencyKey?.trim() || null;
-    if (idempotencyKey) {
-      const dedupeKey = `${userId}:${idempotencyKey}`;
-      const existingPostId = this.postCreationIdempotencyKeys.get(dedupeKey);
-      if (existingPostId) {
-        // Retried request — return the original post
-        return this.serializePost(existingPostId, userId);
-      }
-    }
-
-    // Media ownership validation: verify all media IDs belong to the authenticated user
-    const mediaIds = safeArray<number>(input.mediaIds)
+  /**
+   * Validates existence/ownership/status for every media id, de-duplicates
+   * (preserving first-occurrence order) and enforces MAX_POST_MEDIA_ITEMS.
+   * Runs the same checks in both persistence modes; the Prisma path also
+   * warms the media cache for the rows it just validated so serializePost's
+   * synchronous media lookups don't miss right after a cold start.
+   */
+  private async validateAndNormalizePostMediaIds(
+    userId: number,
+    rawMediaIds: unknown,
+  ): Promise<number[]> {
+    const requested = safeArray<number>(rawMediaIds)
       .map((value) => Number(value))
       .filter(Number.isFinite);
-    for (const mediaId of mediaIds) {
-      const media = this.media.get(mediaId);
-      if (!media) {
-        throw new Error(`Invalid media reference`);
+    const mediaIds = [...new Set(requested)];
+    if (mediaIds.length > MAX_POST_MEDIA_ITEMS) {
+      throw new Error(`A post may not have more than ${MAX_POST_MEDIA_ITEMS} media attachments`);
+    }
+    if (mediaIds.length === 0) return mediaIds;
+
+    if (this.mediaPrisma) {
+      const rows = await this.mediaPrisma.media.findMany({ where: { id: { in: mediaIds } } });
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      for (const mediaId of mediaIds) {
+        const media = byId.get(mediaId);
+        if (!media) throw new Error('Invalid media reference');
+        if (media.ownerUserId !== userId) throw new Error('Media is not owned by the current user');
+        // Current upload path (media-storage.ts) always creates media
+        // READY synchronously — PROCESSING/FAILED are only reachable via
+        // the not-yet-merged async image/video queue (see job file § Media
+        // status policy). This check is the forward-compatible guard: only
+        // READY media may ever be attached to a Post.
+        if (media.status !== 'READY') {
+          throw new Error(`Media ${mediaId} is not ready (status: ${media.status})`);
+        }
+        this.cacheMediaRecord(mapMediaRowToRecord(media));
       }
-      if (media.ownerUserId !== userId) {
-        throw new Error(`Media is not owned by the current user`);
+    } else {
+      for (const mediaId of mediaIds) {
+        const media = this.media.get(mediaId);
+        if (!media) throw new Error('Invalid media reference');
+        if (media.ownerUserId !== userId) throw new Error('Media is not owned by the current user');
+        if (media.status !== 'READY') {
+          throw new Error(`Media ${mediaId} is not ready (status: ${media.status})`);
+        }
       }
     }
+    return mediaIds;
+  }
 
-    const post = this.createPostRecord({
-      authorId: userId,
+  async createPost(userId: number, input: SocialPostUpsertInput): Promise<SocialPostPayload> {
+    const idempotencyKey = input.idempotencyKey?.trim() || null;
+
+    const fields: PostCreateFields = {
+      caption: normalizeText(input.caption),
       type: (input.type?.toString().toUpperCase() as PostType) || 'TEXT',
       category: (input.category?.toString().toUpperCase() as PostCategory) || 'GENERAL',
-      caption: normalizeText(input.caption),
       privacy: (input.privacy?.toString().toUpperCase() as PostPrivacy) || 'PUBLIC',
       backgroundStyle: normalizeText(input.backgroundStyle),
       postType: normalizeText(input.postType),
       lostPetName: normalizeText(input.lostPetName),
       lostPetLocation: normalizeText(input.lostPetLocation),
       lostPetContactVisible: input.lostPetContactVisible ?? false,
-      mediaIds: mediaIds,
+      mediaIds: await this.validateAndNormalizePostMediaIds(userId, input.mediaIds),
       taggedPetIds: safeArray<number>(input.taggedPetIds)
         .map((value) => Number(value))
         .filter(Number.isFinite),
@@ -1863,46 +2048,205 @@ export class SocialCoreStore {
       activityId: normalizeText(input.activityId),
       activityLabel: normalizeText(input.activityLabel),
       activityEmoji: normalizeText(input.activityEmoji),
-    });
+    };
 
-    // Record idempotency key after successful creation
     if (idempotencyKey) {
-      const dedupeKey = `${userId}:${idempotencyKey}`;
-      this.postCreationIdempotencyKeys.set(dedupeKey, post.id);
+      // Fast path: this process already served this key (covers the common
+      // case — same-process retry — without a DB round trip).
+      const cachedId = this.postCreationIdempotencyKeys.get(`${userId}:${idempotencyKey}`);
+      const cached = cachedId ? this.posts.get(cachedId) : undefined;
+      if (cached) {
+        if (fingerprintFromPostRecord(cached) !== buildPostFingerprint(fields)) {
+          throw new Error('Idempotency key already used with a different request payload');
+        }
+        return this.serializePost(cached.id, userId);
+      }
+      // Cold cache (restart, or another instance served the original
+      // request) — check the durable record before creating anything.
+      if (this.mediaPrisma) {
+        const persisted = await this.loadPersistedPostByIdempotencyKey(userId, idempotencyKey);
+        if (persisted) {
+          this.postCreationIdempotencyKeys.set(`${userId}:${idempotencyKey}`, persisted.id);
+          if (fingerprintFromPostRecord(persisted) !== buildPostFingerprint(fields)) {
+            throw new Error('Idempotency key already used with a different request payload');
+          }
+          return this.serializePost(persisted.id, userId);
+        }
+      }
     }
 
+    if (this.mediaPrisma) {
+      try {
+        const row = await this.mediaPrisma.post.create({
+          data: {
+            authorId: userId,
+            type: fields.type,
+            category: fields.category,
+            caption: fields.caption,
+            privacy: fields.privacy,
+            backgroundStyle: fields.backgroundStyle,
+            postType: fields.postType,
+            lostPetName: fields.lostPetName,
+            lostPetLocation: fields.lostPetLocation,
+            lostPetContactVisible: fields.lostPetContactVisible,
+            songTitle: fields.songTitle,
+            songArtist: fields.songArtist,
+            songStartMs: fields.songStartMs,
+            songDurationMs: fields.songDurationMs,
+            locationTag: fields.locationTag,
+            feelingId: fields.feelingId,
+            feelingLabel: fields.feelingLabel,
+            feelingEmoji: fields.feelingEmoji,
+            activityId: fields.activityId,
+            activityLabel: fields.activityLabel,
+            activityEmoji: fields.activityEmoji,
+            createIdempotencyKey: idempotencyKey,
+            media: fields.mediaIds.length
+              ? { create: fields.mediaIds.map((mediaId, position) => ({ mediaId, position })) }
+              : undefined,
+            taggedPets: fields.taggedPetIds.length
+              ? { create: fields.taggedPetIds.map((petId) => ({ petId })) }
+              : undefined,
+          },
+          include: POST_PERSISTENCE_INCLUDE,
+        });
+        const record = this.cachePostRow(row);
+        if (idempotencyKey) {
+          this.postCreationIdempotencyKeys.set(`${userId}:${idempotencyKey}`, record.id);
+        }
+        return this.serializePost(record.id, userId);
+      } catch (error) {
+        // P2002 on the (authorId, createIdempotencyKey) unique index means
+        // a concurrent request for the same key won the race between our
+        // cache-miss check above and this insert — the database, not an
+        // in-process check-then-write, is what makes this concurrency-safe.
+        if (
+          idempotencyKey &&
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          const winner = await this.loadPersistedPostByIdempotencyKey(userId, idempotencyKey);
+          if (winner) {
+            this.postCreationIdempotencyKeys.set(`${userId}:${idempotencyKey}`, winner.id);
+            if (fingerprintFromPostRecord(winner) !== buildPostFingerprint(fields)) {
+              throw new Error('Idempotency key already used with a different request payload', {
+                cause: error,
+              });
+            }
+            return this.serializePost(winner.id, userId);
+          }
+        }
+        throw error;
+      }
+    }
+
+    // No Prisma configured — development in-memory fallback. Not restart-
+    // safe or multi-instance-safe; see job file § Durable idempotency.
+    const post = this.createPostRecord({ ...fields, authorId: userId });
+    if (idempotencyKey) {
+      this.postCreationIdempotencyKeys.set(`${userId}:${idempotencyKey}`, post.id);
+    }
     return this.serializePost(post.id, userId);
   }
 
-  updatePost(userId: number, postId: number, input: SocialPostUpsertInput): SocialPostPayload {
-    const post = this.mustGetPost(postId);
+  async updatePost(
+    userId: number,
+    postId: number,
+    input: SocialPostUpsertInput,
+  ): Promise<SocialPostPayload> {
+    const post = await this.mustGetPersistedPost(postId);
     if (post.authorId !== userId) {
       throw new Error('Forbidden');
     }
-    if (post.status === 'DELETED') {
-      throw new Error('Post not found');
+
+    const nextMediaIds =
+      input.mediaIds !== undefined
+        ? await this.validateAndNormalizePostMediaIds(userId, input.mediaIds)
+        : undefined;
+
+    if (this.mediaPrisma) {
+      const row = await this.mediaPrisma.$transaction(async (tx) => {
+        if (nextMediaIds !== undefined) {
+          // Replace-in-place: delete the existing PostMedia set and create
+          // the new one inside the same transaction, so a Post is never
+          // observable with a half-old/half-new media set.
+          await tx.postMedia.deleteMany({ where: { postId } });
+        }
+        if (input.taggedPetIds !== undefined) {
+          await tx.postTaggedPet.deleteMany({ where: { postId } });
+        }
+        return tx.post.update({
+          where: { id: postId },
+          data: {
+            caption: input.caption !== undefined ? normalizeText(input.caption) : undefined,
+            type:
+              input.type !== undefined && input.type
+                ? (input.type.toString().toUpperCase() as PostType)
+                : undefined,
+            category:
+              input.category !== undefined && input.category
+                ? (input.category.toString().toUpperCase() as PostCategory)
+                : undefined,
+            privacy:
+              input.privacy !== undefined && input.privacy
+                ? (input.privacy.toString().toUpperCase() as PostPrivacy)
+                : undefined,
+            postType: input.postType !== undefined ? normalizeText(input.postType) : undefined,
+            backgroundStyle:
+              input.backgroundStyle !== undefined ? normalizeText(input.backgroundStyle) : undefined,
+            lostPetName:
+              input.lostPetName !== undefined ? normalizeText(input.lostPetName) : undefined,
+            lostPetLocation:
+              input.lostPetLocation !== undefined ? normalizeText(input.lostPetLocation) : undefined,
+            lostPetContactVisible:
+              input.lostPetContactVisible !== undefined && input.lostPetContactVisible !== null
+                ? Boolean(input.lostPetContactVisible)
+                : undefined,
+            songTitle: input.songTitle !== undefined ? normalizeText(input.songTitle) : undefined,
+            songArtist: input.songArtist !== undefined ? normalizeText(input.songArtist) : undefined,
+            songStartMs: input.songStartMs !== undefined ? (input.songStartMs ?? null) : undefined,
+            songDurationMs:
+              input.songDurationMs !== undefined ? (input.songDurationMs ?? null) : undefined,
+            locationTag:
+              input.locationText !== undefined ? normalizeText(input.locationText) : undefined,
+            feelingId: input.feelingId !== undefined ? normalizeText(input.feelingId) : undefined,
+            feelingLabel:
+              input.feelingLabel !== undefined ? normalizeText(input.feelingLabel) : undefined,
+            feelingEmoji:
+              input.feelingEmoji !== undefined ? normalizeText(input.feelingEmoji) : undefined,
+            activityId: input.activityId !== undefined ? normalizeText(input.activityId) : undefined,
+            activityLabel:
+              input.activityLabel !== undefined ? normalizeText(input.activityLabel) : undefined,
+            activityEmoji:
+              input.activityEmoji !== undefined ? normalizeText(input.activityEmoji) : undefined,
+            media:
+              nextMediaIds !== undefined
+                ? { create: nextMediaIds.map((mediaId, position) => ({ mediaId, position })) }
+                : undefined,
+            taggedPets:
+              input.taggedPetIds !== undefined
+                ? {
+                    create: safeArray<number>(input.taggedPetIds)
+                      .map((value) => Number(value))
+                      .filter(Number.isFinite)
+                      .map((petId) => ({ petId })),
+                  }
+                : undefined,
+          },
+          include: POST_PERSISTENCE_INCLUDE,
+        });
+      });
+      const record = this.cachePostRow(row);
+      return this.serializePost(record.id, userId);
     }
+
+    // In-memory fallback
     if (input.caption !== undefined) post.caption = normalizeText(input.caption);
     if (input.type !== undefined && input.type)
       post.type = input.type.toString().toUpperCase() as PostType;
     if (input.category !== undefined && input.category)
       post.category = input.category.toString().toUpperCase() as PostCategory;
-    if (input.mediaIds !== undefined) {
-      // Media ownership validation: verify all media IDs belong to the authenticated user
-      const newMediaIds = safeArray<number>(input.mediaIds)
-        .map((value) => Number(value))
-        .filter(Number.isFinite);
-      for (const mediaId of newMediaIds) {
-        const media = this.media.get(mediaId);
-        if (!media) {
-          throw new Error(`Invalid media reference`);
-        }
-        if (media.ownerUserId !== userId) {
-          throw new Error(`Media is not owned by the current user`);
-        }
-      }
-      post.mediaIds = newMediaIds;
-    }
+    if (nextMediaIds !== undefined) post.mediaIds = nextMediaIds;
     if (input.privacy !== undefined && input.privacy)
       post.privacy = input.privacy.toString().toUpperCase() as PostPrivacy;
     if (input.postType !== undefined) post.postType = normalizeText(input.postType);
@@ -1932,13 +2276,25 @@ export class SocialCoreStore {
     return this.serializePost(post.id, userId);
   }
 
-  deletePost(userId: number, postId: number): { deleted: true; id: number } {
-    const post = this.mustGetPost(postId);
+  async deletePost(userId: number, postId: number): Promise<{ deleted: true; id: number }> {
+    const post = await this.mustGetPersistedPost(postId);
     if (post.authorId !== userId) {
       throw new Error('Forbidden');
     }
-    post.status = 'DELETED';
-    post.updatedAt = new Date();
+    if (this.mediaPrisma) {
+      // Soft delete only — status flip, not a row/media deletion. Media
+      // owned by the user is untouched: deleting a Post must not delete
+      // Media the user may still reference elsewhere (profile, other posts).
+      const row = await this.mediaPrisma.post.update({
+        where: { id: postId },
+        data: { status: 'DELETED' },
+        include: POST_PERSISTENCE_INCLUDE,
+      });
+      this.cachePostRow(row);
+    } else {
+      post.status = 'DELETED';
+      post.updatedAt = new Date();
+    }
     return { deleted: true, id: post.id };
   }
 
@@ -1999,7 +2355,36 @@ export class SocialCoreStore {
     return { viewCount: post.viewCount };
   }
 
-  listFeed(viewerId: number, limit: number, cursor?: unknown): SocialPostPayload[] {
+  /**
+   * Feed ranking/visibility (getVisiblePosts, canViewerSeePost) stays
+   * purely in-memory in this vertical slice — it already depends on
+   * Follow/Block data that is itself still in-memory-only, so making Post
+   * visibility SQL-native without also migrating the social graph would
+   * only be half a fix. What this method adds is restart-safety for the
+   * Post rows themselves: on first call after a cold start it bulk-loads
+   * the most recent posts from Prisma into the same cache the in-memory
+   * logic already reads, so a Post created before a restart is still
+   * visible in the feed afterward. Bounded by FEED_HYDRATION_LIMIT — deep
+   * cursor pagination past that window after a cold start is a known
+   * scaling gap, tracked in the job file, not a silent correctness bug for
+   * the restart-safety property this slice is required to prove.
+   */
+  private feedHydrated = false;
+  private static readonly FEED_HYDRATION_LIMIT = 1000;
+
+  private async ensureFeedCacheWarm(): Promise<void> {
+    if (this.feedHydrated || !this.mediaPrisma) return;
+    const rows = await this.mediaPrisma.post.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: SocialCoreStore.FEED_HYDRATION_LIMIT,
+      include: POST_PERSISTENCE_INCLUDE,
+    });
+    for (const row of rows) this.cachePostRow(row);
+    this.feedHydrated = true;
+  }
+
+  async listFeed(viewerId: number, limit: number, cursor?: unknown): Promise<SocialPostPayload[]> {
+    await this.ensureFeedCacheWarm();
     return this.slicePosts(
       viewerId,
       this.getVisiblePosts(viewerId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
@@ -2315,8 +2700,8 @@ export class SocialCoreStore {
     return this.serializeComment(reply.id, viewerId);
   }
 
-  getPostById(viewerId: number, postId: number): SocialPostPayload {
-    const post = this.mustGetPost(postId);
+  async getPostById(viewerId: number, postId: number): Promise<SocialPostPayload> {
+    const post = await this.mustGetPersistedPost(postId);
     this.ensureCanViewPost(viewerId, post);
     return this.serializePost(post.id, viewerId);
   }
@@ -2484,6 +2869,65 @@ export class SocialCoreStore {
     };
     this.posts.set(post.id, post);
     return post;
+  }
+
+  private cachePostRecord(post: PostRecord): PostRecord {
+    this.posts.set(post.id, post);
+    this.nextPostId = Math.max(this.nextPostId, post.id + 1);
+    return post;
+  }
+
+  /**
+   * Caches both the Post itself and every attached Media row from the same
+   * query result — see POST_PERSISTENCE_INCLUDE's comment for why the media
+   * cache has to be warmed alongside the post cache, not independently.
+   */
+  private cachePostRow(row: PersistedPostRow): PostRecord {
+    for (const item of row.media) this.cacheMediaRecord(mapMediaRowToRecord(item.media));
+    return this.cachePostRecord(mapPostRowToRecord(row));
+  }
+
+  /** Cache-first: after a restart the in-memory cache is empty, so this falls through to Prisma. */
+  private async loadPersistedPostById(postId: number): Promise<PostRecord | null> {
+    if (!this.mediaPrisma) return null;
+    const row = await this.mediaPrisma.post.findUnique({
+      where: { id: postId },
+      include: POST_PERSISTENCE_INCLUDE,
+    });
+    if (!row) return null;
+    return this.cachePostRow(row);
+  }
+
+  private async loadPersistedPostByIdempotencyKey(
+    authorId: number,
+    createIdempotencyKey: string,
+  ): Promise<PostRecord | null> {
+    if (!this.mediaPrisma) return null;
+    const row = await this.mediaPrisma.post.findUnique({
+      where: { authorId_createIdempotencyKey: { authorId, createIdempotencyKey } },
+      include: POST_PERSISTENCE_INCLUDE,
+    });
+    if (!row) return null;
+    return this.cachePostRow(row);
+  }
+
+  /**
+   * Cache-first single-post fetch used by every read/write entry point.
+   * Async because a cache miss (fresh process, post created on another
+   * instance) needs to fall through to Prisma — call sites that only ever
+   * need the in-memory cache (comments, likes, bookmarks — all still
+   * in-memory-only in this vertical slice, see docs/jobs job file) keep
+   * using the synchronous mustGetPost().
+   */
+  private async mustGetPersistedPost(postId: number): Promise<PostRecord> {
+    const cached = this.posts.get(postId);
+    if (cached) {
+      if (cached.status === 'DELETED') throw new Error('Post not found');
+      return cached;
+    }
+    const loaded = await this.loadPersistedPostById(postId);
+    if (!loaded || loaded.status === 'DELETED') throw new Error('Post not found');
+    return loaded;
   }
 
   private createCommentRecord(input: {
