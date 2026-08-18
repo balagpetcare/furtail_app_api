@@ -480,6 +480,17 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       if (!requestPath || requestPath === 'upload') {
         throw AppError.notFound('Media not found');
       }
+      // This route deliberately serves public post/profile media to a Web
+      // origin that differs from the API's own origin (different port in
+      // dev, likely a different subdomain in prod). Helmet's default
+      // Cross-Origin-Resource-Policy: same-origin — still correctly applied
+      // to every other route by app.ts's global helmet() call — would make
+      // browsers silently block every <img>/<video> load of this URL from
+      // any other origin (no console-visible CORS error, just a fired
+      // onerror), which is invisible to same-process supertest assertions
+      // but breaks real browsers. Only this explicitly-public route opts
+      // back into cross-origin embedding.
+      res.set('Cross-Origin-Resource-Policy', 'cross-origin');
       if (requestPath.startsWith('legacy/')) {
         res.status(200).type('image/png').send(LEGACY_PLACEHOLDER_PNG);
         return;
