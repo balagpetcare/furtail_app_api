@@ -240,6 +240,7 @@ function toPublicMediaStatus(status: MediaStatus): 'READY' | 'PROCESSING' | 'FAI
 
 /** Matches common social-platform norms (Instagram/Facebook allow ~10). */
 const MAX_POST_MEDIA_ITEMS = 10;
+const MAX_POST_CONTENT_TAGS = 10;
 
 interface PersistedPostRow {
   id: number;
@@ -274,6 +275,7 @@ interface PersistedPostRow {
   updatedAt: Date;
   media: { position: number; media: Parameters<typeof mapMediaRowToRecord>[0] }[];
   taggedPets: { petId: number }[];
+  contentTags: { tag: { id: number; key: string; label: string } }[];
   author: PersistedAuthorRow;
 }
 
@@ -339,6 +341,7 @@ function mapPostRowToRecord(row: PersistedPostRow): PostRecord {
     fundraisingCampaignId: row.fundraisingCampaignId,
     mediaIds: [...row.media].sort((a, b) => a.position - b.position).map((m) => m.media.id),
     taggedPetIds: row.taggedPets.map((t) => t.petId),
+    contentTagIds: row.contentTags.map((ct) => ct.tag.id),
     shareCount: row.shareCount,
     viewCount: row.viewCount,
     status: row.status as 'ACTIVE' | 'DELETED',
@@ -402,6 +405,11 @@ const POST_PERSISTENCE_INCLUDE = {
   // post cache are otherwise populated independently.
   media: { select: { position: true, media: true } },
   taggedPets: { select: { petId: true } },
+  // Full {id, key, label} per tag (not just the id) so serializePost's
+  // content tag cache is warmed in this same query, mirroring the media
+  // include's rationale above — a fresh Post load must never need a
+  // separate round trip to resolve tag labels.
+  contentTags: { select: { tag: { select: { id: true, key: true, label: true } } } },
   // authorPayload()/serializePost() call the synchronous mustGetUser(),
   // which only ever reads the in-memory `this.users` cache — it has no
   // Prisma fallback of its own (unlike mustGetPost, which now does via
@@ -434,6 +442,7 @@ interface PostCreateFields {
   lostPetContactVisible: boolean;
   mediaIds: number[];
   taggedPetIds: number[];
+  contentTagIds: number[];
   songTitle: string | null;
   songArtist: string | null;
   songStartMs: number | null;
@@ -459,6 +468,7 @@ function buildPostFingerprint(fields: PostCreateFields): string {
     ...fields,
     mediaIds: [...fields.mediaIds].sort((a, b) => a - b),
     taggedPetIds: [...fields.taggedPetIds].sort((a, b) => a - b),
+    contentTagIds: [...fields.contentTagIds].sort((a, b) => a - b),
   });
 }
 
@@ -475,6 +485,7 @@ function fingerprintFromPostRecord(post: PostRecord): string {
     lostPetContactVisible: post.lostPetContactVisible,
     mediaIds: post.mediaIds,
     taggedPetIds: post.taggedPetIds,
+    contentTagIds: post.contentTagIds,
     songTitle: post.songTitle,
     songArtist: post.songArtist,
     songStartMs: post.songStartMs,
@@ -544,6 +555,7 @@ interface PostRecord {
   fundraisingCampaignId: number | null;
   mediaIds: number[];
   taggedPetIds: number[];
+  contentTagIds: number[];
   shareCount: number;
   viewCount: number;
   status: 'ACTIVE' | 'DELETED';
@@ -643,6 +655,7 @@ export interface SocialPostPayload {
   lostPetContactVisible: boolean;
   taggedPetIds: number[];
   taggedPets: Array<Record<string, unknown>>;
+  contentTags: Array<Record<string, unknown>>;
   songTitle: string | null;
   songArtist: string | null;
   songStartMs: number | null;
@@ -713,6 +726,7 @@ export interface SocialPostUpsertInput {
   lostPetLocation?: string | null;
   lostPetContactVisible?: boolean | null;
   taggedPetIds?: number[] | null;
+  contentTagIds?: number[] | null;
   songTitle?: string | null;
   songArtist?: string | null;
   songStartMs?: number | null;
@@ -815,6 +829,10 @@ export class SocialCoreStore {
   private readonly users = new Map<number, UserRecord>();
   private readonly media = new Map<number, MediaRecord>();
   private readonly posts = new Map<number, PostRecord>();
+  /** Warmed alongside a Post load (see cachePostRow) so serializePost — a
+   * synchronous method — can resolve a Post's content tag labels without an
+   * extra async Prisma round trip. */
+  private readonly contentTagCache = new Map<number, { id: number; key: string; label: string }>();
   private readonly comments = new Map<number, CommentRecord>();
   private readonly gallery = new Map<number, GalleryItemRecord[]>();
   private readonly follows = new Set<string>();
@@ -2113,6 +2131,30 @@ export class SocialCoreStore {
     return mediaIds;
   }
 
+  /** Content tags require Prisma (the taxonomy tables have no in-memory
+   * fallback) — attaching tags is simply unavailable without a database,
+   * mirroring how the taxonomy read endpoints already behave. */
+  private async validateAndNormalizeContentTagIds(rawTagIds: unknown): Promise<number[]> {
+    const requested = safeArray<number>(rawTagIds)
+      .map((value) => Number(value))
+      .filter(Number.isFinite);
+    const tagIds = [...new Set(requested)];
+    if (tagIds.length > MAX_POST_CONTENT_TAGS) {
+      throw new Error(`A post may not have more than ${MAX_POST_CONTENT_TAGS} content tags`);
+    }
+    if (tagIds.length === 0) return tagIds;
+    if (!this.mediaPrisma) return [];
+
+    const rows = await this.mediaPrisma.contentTag.findMany({ where: { id: { in: tagIds } } });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    for (const tagId of tagIds) {
+      const tag = byId.get(tagId);
+      if (!tag) throw new Error('Invalid content tag reference');
+      this.contentTagCache.set(tag.id, { id: tag.id, key: tag.key, label: tag.label });
+    }
+    return tagIds;
+  }
+
   async createPost(userId: number, input: SocialPostUpsertInput): Promise<SocialPostPayload> {
     const idempotencyKey = input.idempotencyKey?.trim() || null;
 
@@ -2130,6 +2172,7 @@ export class SocialCoreStore {
       taggedPetIds: safeArray<number>(input.taggedPetIds)
         .map((value) => Number(value))
         .filter(Number.isFinite),
+      contentTagIds: await this.validateAndNormalizeContentTagIds(input.contentTagIds),
       songTitle: normalizeText(input.songTitle),
       songArtist: normalizeText(input.songArtist),
       songStartMs: input.songStartMs ?? null,
@@ -2199,6 +2242,9 @@ export class SocialCoreStore {
               : undefined,
             taggedPets: fields.taggedPetIds.length
               ? { create: fields.taggedPetIds.map((petId) => ({ petId })) }
+              : undefined,
+            contentTags: fields.contentTagIds.length
+              ? { create: fields.contentTagIds.map((tagId) => ({ tagId })) }
               : undefined,
           },
           include: POST_PERSISTENCE_INCLUDE,
@@ -2915,6 +2961,7 @@ export class SocialCoreStore {
     lostPetLocation?: string | null;
     lostPetContactVisible?: boolean | null;
     taggedPetIds?: number[];
+    contentTagIds?: number[];
     songTitle?: string | null;
     songArtist?: string | null;
     songStartMs?: number | null;
@@ -2954,6 +3001,7 @@ export class SocialCoreStore {
       fundraisingCampaignId: null,
       mediaIds: [...input.mediaIds],
       taggedPetIds: [...(input.taggedPetIds ?? [])],
+      contentTagIds: [...(input.contentTagIds ?? [])],
       shareCount: 0,
       viewCount: 0,
       status: 'ACTIVE',
@@ -2977,6 +3025,7 @@ export class SocialCoreStore {
    */
   private cachePostRow(row: PersistedPostRow): PostRecord {
     for (const item of row.media) this.cacheMediaRecord(mapMediaRowToRecord(item.media));
+    for (const item of row.contentTags) this.contentTagCache.set(item.tag.id, item.tag);
     // Warms mustGetUser()'s cache with the Post's author — mustGetUser()
     // has no Prisma fallback of its own (see POST_PERSISTENCE_INCLUDE's
     // `author` comment), so every path that loads a persisted Post must go
@@ -3096,6 +3145,13 @@ export class SocialCoreStore {
       lostPetContactVisible: post.lostPetContactVisible,
       taggedPetIds: [...post.taggedPetIds],
       taggedPets: post.taggedPetIds.map((id) => ({ id, name: `Pet ${id}`, photo: null })),
+      // Real cached {id, key, label} per tag (warmed by cachePostRow /
+      // validateAndNormalizeContentTagIds) — never fabricated, unlike
+      // taggedPets above whose name/photo placeholders stand in for a Pet
+      // record this store has no access to.
+      contentTags: post.contentTagIds
+        .map((id) => this.contentTagCache.get(id))
+        .filter((tag): tag is { id: number; key: string; label: string } => Boolean(tag)),
       songTitle: post.songTitle,
       songArtist: post.songArtist,
       songStartMs: post.songStartMs,

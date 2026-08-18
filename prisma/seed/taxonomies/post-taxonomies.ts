@@ -97,8 +97,7 @@ export async function seedPostTaxonomies(prisma: PrismaClient) {
     { key: 'animal_welfare', label: 'Animal welfare', emoji: '💚', category: 'Lost & Rescue' },
   ];
 
-  for (let i = 0; i < activities.length; i++) {
-    const activity = activities[i];
+  for (const [i, activity] of activities.entries()) {
     await prisma.postActivity.upsert({
       where: { key: activity.key },
       update: {
@@ -154,14 +153,20 @@ export async function seedPostTaxonomies(prisma: PrismaClient) {
     });
   }
 
-  // Seed BackgroundStyle (Flutter canonical IDs)
+  // Seed BackgroundStyle. Keys and sortOrder are the stable, Flutter-shared
+  // canonical IDs — must never change once posts may reference them
+  // (furtail_app/lib/features/posts/presentation/widgets/post_background_style.dart's
+  // PostBackgroundStyle.presets). colorValue/colorValueEnd are the exact
+  // gradient stops Flutter renders for each id, so Web's caption preview
+  // and feed rendering visually match the mobile app instead of degrading
+  // to a flat approximation of a gradient.
   const backgroundStyles = [
-    { key: 'none', label: 'None', styleType: 'solid', colorValue: null, sortOrder: 0 },
-    { key: 'orange_red', label: 'Orange Red', styleType: 'solid', colorValue: '#FF6B35', sortOrder: 1 },
-    { key: 'blue_purple', label: 'Blue Purple', styleType: 'solid', colorValue: '#6B5BE2', sortOrder: 2 },
-    { key: 'dark_purple', label: 'Dark Purple', styleType: 'solid', colorValue: '#4A3F8F', sortOrder: 3 },
-    { key: 'green_teal', label: 'Green Teal', styleType: 'solid', colorValue: '#00A86B', sortOrder: 4 },
-    { key: 'midnight', label: 'Midnight', styleType: 'solid', colorValue: '#0F1419', sortOrder: 5 },
+    { key: 'none', label: 'None', styleType: 'solid', colorValue: null, colorValueEnd: null, textColor: '#000000', sortOrder: 0 },
+    { key: 'orange_red', label: 'Sunset Orange', styleType: 'gradient', colorValue: '#FF512F', colorValueEnd: '#DD2476', textColor: '#FFFFFF', sortOrder: 1 },
+    { key: 'blue_purple', label: 'Neon Blue', styleType: 'gradient', colorValue: '#00C6FF', colorValueEnd: '#0072FF', textColor: '#FFFFFF', sortOrder: 2 },
+    { key: 'dark_purple', label: 'Deep Purple', styleType: 'gradient', colorValue: '#833AB4', colorValueEnd: '#FD1D1D', textColor: '#FFFFFF', sortOrder: 3 },
+    { key: 'green_teal', label: 'Ocean Breeze', styleType: 'gradient', colorValue: '#11998E', colorValueEnd: '#38EF7D', textColor: '#FFFFFF', sortOrder: 4 },
+    { key: 'midnight', label: 'Midnight', styleType: 'gradient', colorValue: '#232526', colorValueEnd: '#414345', textColor: '#FFFFFF', sortOrder: 5 },
   ];
 
   for (const style of backgroundStyles) {
@@ -171,6 +176,8 @@ export async function seedPostTaxonomies(prisma: PrismaClient) {
         label: style.label,
         styleType: style.styleType,
         colorValue: style.colorValue,
+        colorValueEnd: style.colorValueEnd,
+        textColor: style.textColor,
         isActive: true
       },
       create: {
@@ -178,6 +185,8 @@ export async function seedPostTaxonomies(prisma: PrismaClient) {
         label: style.label,
         styleType: style.styleType,
         colorValue: style.colorValue,
+        colorValueEnd: style.colorValueEnd,
+        textColor: style.textColor,
         sortOrder: style.sortOrder,
         isActive: true
       },

@@ -254,6 +254,7 @@ model Post {
   shares                PostShare[]
   views                 PostView[]
   taggedPets            PostTaggedPet[]
+  contentTags           PostContentTag[]
 
   @@unique([authorId, createIdempotencyKey])
   @@index([authorId, createdAt])
@@ -1485,28 +1486,49 @@ model PostCategoryTaxonomy {
 }
 
 model ContentTag {
-  id        Int     @id @default(autoincrement())
-  key       String  @unique @db.VarChar(64)
-  label     String  @db.VarChar(160)
-  sortOrder Int     @default(0)
-  isActive  Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        Int              @id @default(autoincrement())
+  key       String           @unique @db.VarChar(64)
+  label     String           @db.VarChar(160)
+  sortOrder Int              @default(0)
+  isActive  Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  posts     PostContentTag[]
 
   @@index([isActive, sortOrder])
   @@map("content_tags")
 }
 
+model PostContentTag {
+  id     Int        @id @default(autoincrement())
+  postId Int
+  tagId  Int
+  post   Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag    ContentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, tagId])
+  @@index([postId])
+  @@index([tagId])
+}
+
 model BackgroundStyle {
-  id         Int     @id @default(autoincrement())
-  key        String  @unique @db.VarChar(64)
-  label      String  @db.VarChar(160)
-  styleType  String  @db.VarChar(32) @default("solid")
-  colorValue String? @db.VarChar(32)
-  sortOrder  Int     @default(0)
-  isActive   Boolean @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id            Int     @id @default(autoincrement())
+  key           String  @unique @db.VarChar(64)
+  label         String  @db.VarChar(160)
+  // SOLID | GRADIENT | PATTERN — structured type only, never arbitrary
+  // CSS/JS. GRADIENT uses colorValue as the start stop and colorValueEnd as
+  // the end stop; PATTERN is reserved for a future admin-selected named
+  // pattern id (no engine to render one server-side yet).
+  styleType     String  @db.VarChar(32) @default("solid")
+  colorValue    String? @db.VarChar(32)
+  colorValueEnd String? @db.VarChar(32)
+  // Safe text color for rendering the caption over this background —
+  // required (not optional) so composer/feed rendering never has to guess.
+  textColor     String  @db.VarChar(32) @default("#000000")
+  sortOrder     Int     @default(0)
+  isActive      Boolean @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([isActive, sortOrder])
   @@map("background_styles")

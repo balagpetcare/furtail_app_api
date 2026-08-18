@@ -4,7 +4,7 @@ import type { PrismaClient } from '@prisma/client';
 
 import { sendSuccess } from '../core/http/api-response';
 import { AppError } from '../core/errors/app-error';
-import { requiredAuth, optionalAuth } from '../security/auth-middleware';
+import { requiredAuth, optionalAuth, requireRole } from '../security/auth-middleware';
 import type { TokenVerifier } from '../security/principal';
 import { asyncHandler } from '../shared/async-handler';
 import {
@@ -12,7 +12,11 @@ import {
   resolveStoredMediaPath,
 } from '../modules/media/media-storage';
 import { createSocialCoreStore, type SocialCoreStore } from '../modules/social/social-store';
-import { TaxonomyService } from '../modules/social/taxonomy-service';
+import {
+  TaxonomyService,
+  TaxonomyDuplicateKeyError,
+  TaxonomyNotFoundError,
+} from '../modules/social/taxonomy-service';
 import { extname } from 'node:path';
 import { env } from '../config/env';
 import { getPrisma } from '../infrastructure/db/prisma-client';
@@ -201,11 +205,22 @@ function mapError(error: unknown, fallbackMessage: string): AppError {
   if (message.includes('Invalid target')) return AppError.validation(message);
   if (message.includes('Idempotency key already used')) return AppError.conflict(message);
   if (message.includes('Invalid media reference')) return AppError.validation(message);
+  if (message.includes('Invalid content tag reference')) return AppError.validation(message);
   if (message.includes('Media is not owned by the current user'))
     return AppError.authorizationDenied(message);
   if (message.includes('is not ready (status:')) return AppError.validation(message);
   if (message.includes('may not have more than')) return AppError.validation(message);
   return AppError.internal(fallbackMessage);
+}
+
+function mapTaxonomyError(error: unknown, fallbackMessage: string): AppError {
+  if (error instanceof TaxonomyDuplicateKeyError) {
+    return AppError.conflict(error.message, { key: error.key });
+  }
+  if (error instanceof TaxonomyNotFoundError) {
+    return AppError.notFound(error.message);
+  }
+  return mapError(error, fallbackMessage);
 }
 
 export function socialRoutes(deps: SocialRoutesDeps): Router {
@@ -214,6 +229,10 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
   const prisma = deps.prisma !== undefined ? deps.prisma : env.DATABASE_URL ? getPrisma() : null;
   const required = requiredAuth({ verifier: deps.verifier });
   const optional = optionalAuth({ verifier: deps.verifier });
+  // Same convention already used by fundraising/adoption routes
+  // (hasRole(principal, 'admin')) — see tests/security.test.ts for the
+  // tested contract this middleware relies on.
+  const adminOnly = requireRole('admin');
 
   router.get(
     '/api/v1/user/me',
@@ -223,7 +242,12 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       const payload = prisma
         ? await getSharedProfileForUser(prisma, userId, userId, true)
         : store.getCurrentUserPayload(userId);
-      sendSuccess(res, payload, {
+      // Only ever exposed on the caller's own "me" lookup (never another
+      // user's profile) — the client-side admin route guard reads this to
+      // decide whether to show/allow taxonomy management, with the actual
+      // enforcement living server-side on /api/v1/admin/taxonomies/* via
+      // requireRole('admin').
+      sendSuccess(res, { ...payload, roles: req.principal?.roles ?? [] }, {
         requestId: req.requestId,
         correlationId: req.correlationId,
       });
@@ -1069,6 +1093,7 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
           lostPetLocation: req.body?.lostPetLocation,
           lostPetContactVisible: toBoolean(req.body?.lostPetContactVisible),
           taggedPetIds: normalizeBodyArray(req.body?.taggedPetIds),
+          contentTagIds: normalizeBodyArray(req.body?.contentTagIds),
           songTitle: req.body?.songTitle,
           songArtist: req.body?.songArtist,
           songStartMs: toOptionalPositiveInt(req.body?.songStartMs) ?? null,
@@ -1605,7 +1630,13 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       const type = req.query.type?.toString().toUpperCase();
       const q = req.query.q?.toString();
 
-      let allItems: any[] = [];
+      const allItems: Array<{
+        id: string;
+        labelEn: string;
+        emoji: string | null | undefined;
+        category: string | null | undefined;
+        type: 'FEELING' | 'ACTIVITY';
+      }> = [];
 
       if (type === 'FEELING' || !type) {
         const feelings = await service.getActivePostFeelings(q);
@@ -1614,7 +1645,7 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
           labelEn: f.label,
           emoji: f.emoji,
           category: 'Feelings',
-          type: 'FEELING',
+          type: 'FEELING' as const,
         })));
       }
 
@@ -1625,7 +1656,7 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
           labelEn: a.label,
           emoji: a.emoji,
           category: a.category,
-          type: 'ACTIVITY',
+          type: 'ACTIVITY' as const,
         })));
       }
 
@@ -1633,6 +1664,410 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
         requestId: req.requestId,
         correlationId: req.correlationId,
       });
+    }),
+  );
+
+  // ── Admin taxonomy management ──────────────────────────────────────────
+  // Every route below requires a valid session AND the 'admin' role (see
+  // adminOnly above) — an ordinary authenticated user gets 403, not a
+  // silently-scoped response. Web's own /admin route guard is defense in
+  // depth only; this middleware is the actual enforcement boundary.
+
+  router.get(
+    '/api/v1/admin/taxonomies/feelings',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      const data = await service.listAllPostFeelings(req.query.q?.toString());
+      sendSuccess(res, { data }, { requestId: req.requestId, correlationId: req.correlationId });
+    }),
+  );
+
+  router.post(
+    '/api/v1/admin/taxonomies/feelings',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        const key = normalizeContentField(req.body?.key);
+        const label = normalizeContentField(req.body?.label);
+        const emoji = normalizeContentField(req.body?.emoji);
+        if (!key || !label || !emoji) throw AppError.validation('key, label, and emoji are required');
+        const data = await service.createFeeling({
+          key,
+          label,
+          emoji,
+          sortOrder: toOptionalPositiveInt(req.body?.sortOrder),
+        });
+        sendSuccess(res, { data }, {
+          requestId: req.requestId,
+          correlationId: req.correlationId,
+          statusCode: 201,
+        });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to create feeling');
+      }
+    }),
+  );
+
+  router.patch(
+    '/api/v1/admin/taxonomies/feelings/:id',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        const id = toPositiveInt(req.params.id, 'id');
+        const data = await service.updateFeeling(id, {
+          label: normalizeContentField(req.body?.label) ?? undefined,
+          emoji: normalizeContentField(req.body?.emoji) ?? undefined,
+          sortOrder: toOptionalPositiveInt(req.body?.sortOrder),
+          isActive: toBoolean(req.body?.isActive),
+        });
+        sendSuccess(res, { data }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to update feeling');
+      }
+    }),
+  );
+
+  router.delete(
+    '/api/v1/admin/taxonomies/feelings/:id',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        await service.deleteFeeling(toPositiveInt(req.params.id, 'id'));
+        sendSuccess(res, { success: true }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to delete feeling');
+      }
+    }),
+  );
+
+  router.get(
+    '/api/v1/admin/taxonomies/activities',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      const data = await service.listAllPostActivities(req.query.q?.toString());
+      sendSuccess(res, { data }, { requestId: req.requestId, correlationId: req.correlationId });
+    }),
+  );
+
+  router.post(
+    '/api/v1/admin/taxonomies/activities',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        const key = normalizeContentField(req.body?.key);
+        const label = normalizeContentField(req.body?.label);
+        const emoji = normalizeContentField(req.body?.emoji);
+        const category = normalizeContentField(req.body?.category) || 'General';
+        if (!key || !label || !emoji) throw AppError.validation('key, label, and emoji are required');
+        const data = await service.createActivity({
+          key,
+          label,
+          emoji,
+          category,
+          sortOrder: toOptionalPositiveInt(req.body?.sortOrder),
+        });
+        sendSuccess(res, { data }, {
+          requestId: req.requestId,
+          correlationId: req.correlationId,
+          statusCode: 201,
+        });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to create activity');
+      }
+    }),
+  );
+
+  router.patch(
+    '/api/v1/admin/taxonomies/activities/:id',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        const id = toPositiveInt(req.params.id, 'id');
+        const data = await service.updateActivity(id, {
+          label: normalizeContentField(req.body?.label) ?? undefined,
+          emoji: normalizeContentField(req.body?.emoji) ?? undefined,
+          category: normalizeContentField(req.body?.category) ?? undefined,
+          sortOrder: toOptionalPositiveInt(req.body?.sortOrder),
+          isActive: toBoolean(req.body?.isActive),
+        });
+        sendSuccess(res, { data }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to update activity');
+      }
+    }),
+  );
+
+  router.delete(
+    '/api/v1/admin/taxonomies/activities/:id',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        await service.deleteActivity(toPositiveInt(req.params.id, 'id'));
+        sendSuccess(res, { success: true }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to delete activity');
+      }
+    }),
+  );
+
+  router.get(
+    '/api/v1/admin/taxonomies/categories',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      const data = await service.listAllPostCategories(req.query.q?.toString());
+      sendSuccess(res, { data }, { requestId: req.requestId, correlationId: req.correlationId });
+    }),
+  );
+
+  router.post(
+    '/api/v1/admin/taxonomies/categories',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        const key = normalizeContentField(req.body?.key);
+        const label = normalizeContentField(req.body?.label);
+        if (!key || !label) throw AppError.validation('key and label are required');
+        const data = await service.createCategory({
+          key,
+          label,
+          sortOrder: toOptionalPositiveInt(req.body?.sortOrder),
+        });
+        sendSuccess(res, { data }, {
+          requestId: req.requestId,
+          correlationId: req.correlationId,
+          statusCode: 201,
+        });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to create category');
+      }
+    }),
+  );
+
+  router.patch(
+    '/api/v1/admin/taxonomies/categories/:id',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        const id = toPositiveInt(req.params.id, 'id');
+        const data = await service.updateCategory(id, {
+          label: normalizeContentField(req.body?.label) ?? undefined,
+          sortOrder: toOptionalPositiveInt(req.body?.sortOrder),
+          isActive: toBoolean(req.body?.isActive),
+        });
+        sendSuccess(res, { data }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to update category');
+      }
+    }),
+  );
+
+  router.delete(
+    '/api/v1/admin/taxonomies/categories/:id',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        await service.deleteCategory(toPositiveInt(req.params.id, 'id'));
+        sendSuccess(res, { success: true }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to delete category');
+      }
+    }),
+  );
+
+  router.get(
+    '/api/v1/admin/taxonomies/tags',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      const data = await service.listAllContentTags(req.query.q?.toString());
+      sendSuccess(res, { data }, { requestId: req.requestId, correlationId: req.correlationId });
+    }),
+  );
+
+  router.post(
+    '/api/v1/admin/taxonomies/tags',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        const key = normalizeContentField(req.body?.key);
+        const label = normalizeContentField(req.body?.label);
+        if (!key || !label) throw AppError.validation('key and label are required');
+        const data = await service.createContentTag({
+          key,
+          label,
+          sortOrder: toOptionalPositiveInt(req.body?.sortOrder),
+        });
+        sendSuccess(res, { data }, {
+          requestId: req.requestId,
+          correlationId: req.correlationId,
+          statusCode: 201,
+        });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to create content tag');
+      }
+    }),
+  );
+
+  router.patch(
+    '/api/v1/admin/taxonomies/tags/:id',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        const id = toPositiveInt(req.params.id, 'id');
+        const data = await service.updateContentTag(id, {
+          label: normalizeContentField(req.body?.label) ?? undefined,
+          sortOrder: toOptionalPositiveInt(req.body?.sortOrder),
+          isActive: toBoolean(req.body?.isActive),
+        });
+        sendSuccess(res, { data }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to update content tag');
+      }
+    }),
+  );
+
+  router.delete(
+    '/api/v1/admin/taxonomies/tags/:id',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        await service.deleteContentTag(toPositiveInt(req.params.id, 'id'));
+        sendSuccess(res, { success: true }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to delete content tag');
+      }
+    }),
+  );
+
+  router.get(
+    '/api/v1/admin/taxonomies/background-styles',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      const data = await service.listAllBackgroundStyles();
+      sendSuccess(res, { data }, { requestId: req.requestId, correlationId: req.correlationId });
+    }),
+  );
+
+  router.post(
+    '/api/v1/admin/taxonomies/background-styles',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        const key = normalizeContentField(req.body?.key);
+        const label = normalizeContentField(req.body?.label);
+        if (!key || !label) throw AppError.validation('key and label are required');
+        const data = await service.createBackgroundStyle({
+          key,
+          label,
+          styleType: normalizeContentField(req.body?.styleType) ?? undefined,
+          colorValue: normalizeContentField(req.body?.colorValue),
+          colorValueEnd: normalizeContentField(req.body?.colorValueEnd),
+          textColor: normalizeContentField(req.body?.textColor) ?? undefined,
+          sortOrder: toOptionalPositiveInt(req.body?.sortOrder),
+        });
+        sendSuccess(res, { data }, {
+          requestId: req.requestId,
+          correlationId: req.correlationId,
+          statusCode: 201,
+        });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to create background style');
+      }
+    }),
+  );
+
+  router.patch(
+    '/api/v1/admin/taxonomies/background-styles/:id',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        const id = toPositiveInt(req.params.id, 'id');
+        const data = await service.updateBackgroundStyle(id, {
+          label: normalizeContentField(req.body?.label) ?? undefined,
+          styleType: normalizeContentField(req.body?.styleType) ?? undefined,
+          colorValue: req.body?.colorValue === undefined ? undefined : normalizeContentField(req.body?.colorValue),
+          colorValueEnd:
+            req.body?.colorValueEnd === undefined ? undefined : normalizeContentField(req.body?.colorValueEnd),
+          textColor: normalizeContentField(req.body?.textColor) ?? undefined,
+          sortOrder: toOptionalPositiveInt(req.body?.sortOrder),
+          isActive: toBoolean(req.body?.isActive),
+        });
+        sendSuccess(res, { data }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to update background style');
+      }
+    }),
+  );
+
+  router.delete(
+    '/api/v1/admin/taxonomies/background-styles/:id',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      try {
+        await service.deleteBackgroundStyle(toPositiveInt(req.params.id, 'id'));
+        sendSuccess(res, { success: true }, { requestId: req.requestId, correlationId: req.correlationId });
+      } catch (error) {
+        throw mapTaxonomyError(error, 'Failed to delete background style');
+      }
     }),
   );
 
