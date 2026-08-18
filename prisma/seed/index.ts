@@ -1,5 +1,6 @@
 import { seedAnimalReferences } from './animals/animal-references';
 import { seedBdLocations } from './locations/bd-locations';
+import { seedPostTaxonomies } from './taxonomies/post-taxonomies';
 import { disconnectPrisma, getPrisma } from '../../src/infrastructure/db/prisma-client';
 
 const prisma = getPrisma();
@@ -13,6 +14,9 @@ async function main() {
 
     await seedAnimalReferences(prisma);
     console.log('Animal reference data seeded');
+
+    await seedPostTaxonomies(prisma);
+    console.log('Post taxonomies seeded');
 
     console.log('All reference data seeded successfully');
   } catch (error) {

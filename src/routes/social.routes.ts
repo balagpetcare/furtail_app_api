@@ -12,6 +12,7 @@ import {
   resolveStoredMediaPath,
 } from '../modules/media/media-storage';
 import { createSocialCoreStore, type SocialCoreStore } from '../modules/social/social-store';
+import { TaxonomyService } from '../modules/social/taxonomy-service';
 import { extname } from 'node:path';
 import { env } from '../config/env';
 import { getPrisma } from '../infrastructure/db/prisma-client';
@@ -1495,115 +1496,129 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     }),
   );
 
-  // Feeling/Activity catalog endpoint
+  // Database-backed taxonomy endpoints
+  router.get(
+    '/api/v1/taxonomies/feelings',
+    optional,
+    asyncHandler(async (req, res) => {
+      if (!prisma) {
+        throw AppError.internal('Database not available');
+      }
+      const service = new TaxonomyService(prisma);
+      const search = req.query.q?.toString();
+      const feelings = await service.getActivePostFeelings(search);
+      sendSuccess(res, { data: feelings }, {
+        requestId: req.requestId,
+        correlationId: req.correlationId,
+      });
+    }),
+  );
+
+  router.get(
+    '/api/v1/taxonomies/activities',
+    optional,
+    asyncHandler(async (req, res) => {
+      if (!prisma) {
+        throw AppError.internal('Database not available');
+      }
+      const service = new TaxonomyService(prisma);
+      const search = req.query.q?.toString();
+      const category = req.query.category?.toString();
+      const activities = await service.getActivePostActivities(search, category);
+      sendSuccess(res, { data: activities }, {
+        requestId: req.requestId,
+        correlationId: req.correlationId,
+      });
+    }),
+  );
+
+  router.get(
+    '/api/v1/taxonomies/categories',
+    optional,
+    asyncHandler(async (req, res) => {
+      if (!prisma) {
+        throw AppError.internal('Database not available');
+      }
+      const service = new TaxonomyService(prisma);
+      const search = req.query.q?.toString();
+      const categories = await service.getActivePostCategories(search);
+      sendSuccess(res, { data: categories }, {
+        requestId: req.requestId,
+        correlationId: req.correlationId,
+      });
+    }),
+  );
+
+  router.get(
+    '/api/v1/taxonomies/tags',
+    optional,
+    asyncHandler(async (req, res) => {
+      if (!prisma) {
+        throw AppError.internal('Database not available');
+      }
+      const service = new TaxonomyService(prisma);
+      const search = req.query.q?.toString();
+      const tags = await service.getActiveContentTags(search);
+      sendSuccess(res, { data: tags }, {
+        requestId: req.requestId,
+        correlationId: req.correlationId,
+      });
+    }),
+  );
+
+  router.get(
+    '/api/v1/taxonomies/background-styles',
+    optional,
+    asyncHandler(async (req, res) => {
+      if (!prisma) {
+        throw AppError.internal('Database not available');
+      }
+      const service = new TaxonomyService(prisma);
+      const styles = await service.getActiveBackgroundStyles();
+      sendSuccess(res, { data: styles }, {
+        requestId: req.requestId,
+        correlationId: req.correlationId,
+      });
+    }),
+  );
+
+  // Backward-compatible feeling-activities endpoint (for Flutter compatibility)
   router.get(
     '/api/v1/feeling-activities',
     optional,
     asyncHandler(async (req, res) => {
+      if (!prisma) {
+        throw AppError.internal('Database not available');
+      }
+      const service = new TaxonomyService(prisma);
       const type = req.query.type?.toString().toUpperCase();
-      const q = req.query.q?.toString().toLowerCase();
+      const q = req.query.q?.toString();
 
-      // Hardcoded comprehensive list of feelings and activities
-      // Maps to Flutter FeelingActivityItem model
-      const allItems = [
-        // ── Feelings ──
-        { id: 'happy', labelEn: 'Happy', emoji: '😊', category: 'Feelings', type: 'FEELING' },
-        { id: 'sad', labelEn: 'Sad', emoji: '😢', category: 'Feelings', type: 'FEELING' },
-        { id: 'excited', labelEn: 'Excited', emoji: '🤩', category: 'Feelings', type: 'FEELING' },
-        { id: 'blessed', labelEn: 'Blessed', emoji: '🙏', category: 'Feelings', type: 'FEELING' },
-        { id: 'loved', labelEn: 'Loved', emoji: '🥰', category: 'Feelings', type: 'FEELING' },
-        { id: 'tired', labelEn: 'Tired', emoji: '😴', category: 'Feelings', type: 'FEELING' },
-        { id: 'proud', labelEn: 'Proud', emoji: '😎', category: 'Feelings', type: 'FEELING' },
-        { id: 'angry', labelEn: 'Angry', emoji: '😡', category: 'Feelings', type: 'FEELING' },
-        { id: 'relaxed', labelEn: 'Relaxed', emoji: '😌', category: 'Feelings', type: 'FEELING' },
-        { id: 'thankful', labelEn: 'Thankful', emoji: '🤗', category: 'Feelings', type: 'FEELING' },
-        { id: 'hopeful', labelEn: 'Hopeful', emoji: '🌟', category: 'Feelings', type: 'FEELING' },
-        { id: 'emotional', labelEn: 'Emotional', emoji: '😥', category: 'Feelings', type: 'FEELING' },
-        { id: 'confused', labelEn: 'Confused', emoji: '😕', category: 'Feelings', type: 'FEELING' },
-        { id: 'worried', labelEn: 'Worried', emoji: '😟', category: 'Feelings', type: 'FEELING' },
-        { id: 'sick', labelEn: 'Sick', emoji: '🤒', category: 'Feelings', type: 'FEELING' },
-        { id: 'sleepy', labelEn: 'Sleepy', emoji: '😪', category: 'Feelings', type: 'FEELING' },
-        { id: 'motivated', labelEn: 'Motivated', emoji: '💪', category: 'Feelings', type: 'FEELING' },
-        { id: 'grateful', labelEn: 'Grateful', emoji: '💖', category: 'Feelings', type: 'FEELING' },
-        { id: 'peaceful', labelEn: 'Peaceful', emoji: '🕉', category: 'Feelings', type: 'FEELING' },
-        { id: 'surprised', labelEn: 'Surprised', emoji: '😮', category: 'Feelings', type: 'FEELING' },
-        { id: 'funny', labelEn: 'Funny', emoji: '😄', category: 'Feelings', type: 'FEELING' },
-        { id: 'cute', labelEn: 'Cute', emoji: '🥺', category: 'Feelings', type: 'FEELING' },
-        { id: 'cool', labelEn: 'Cool', emoji: '😎', category: 'Feelings', type: 'FEELING' },
-        { id: 'nervous', labelEn: 'Nervous', emoji: '😬', category: 'Feelings', type: 'FEELING' },
+      let allItems: any[] = [];
 
-        // ── Activities ──
-        { id: 'watching', labelEn: 'Watching', emoji: '🎬', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'listening', labelEn: 'Listening', emoji: '🎧', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'reading', labelEn: 'Reading', emoji: '📖', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'playing', labelEn: 'Playing', emoji: '🎮', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'traveling', labelEn: 'Traveling', emoji: '✈️', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'eating', labelEn: 'Eating', emoji: '🍽', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'drinking', labelEn: 'Drinking', emoji: '☕', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'celebrating', labelEn: 'Celebrating', emoji: '🎉', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'working', labelEn: 'Working', emoji: '💼', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'shopping', labelEn: 'Shopping', emoji: '🛍', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'cooking', labelEn: 'Cooking', emoji: '👨‍🍳', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'exercising', labelEn: 'Exercising', emoji: '🏃', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'walking', labelEn: 'Walking', emoji: '🚶', category: 'Activities', type: 'ACTIVITY' },
-        { id: 'resting', labelEn: 'Resting', emoji: '🛌', category: 'Activities', type: 'ACTIVITY' },
-
-        // ── Pet Care ──
-        { id: 'with_pet', labelEn: 'With my pet', emoji: '🐾', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'feeding_pet', labelEn: 'Feeding my pet', emoji: '🍽', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'grooming', labelEn: 'Grooming my pet', emoji: '🧼', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'bathing', labelEn: 'Bathing my pet', emoji: '🛁', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'walking_dog', labelEn: 'Walking my dog', emoji: '🐕', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'playing_cat', labelEn: 'Playing with cat', emoji: '🐈', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'training', labelEn: 'Training my pet', emoji: '🎓', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'pet_shopping', labelEn: 'Pet shopping', emoji: '🛍', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'pet_birthday', labelEn: 'Pet birthday', emoji: '🎂', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'pet_photoshoot', labelEn: 'Pet photo shoot', emoji: '📸', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'pet_playtime', labelEn: 'Pet playtime', emoji: '🧸', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'cleaning_litter', labelEn: 'Cleaning litter box', emoji: '🧹', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'giving_treats', labelEn: 'Giving treats', emoji: '🧈', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'cuddling', labelEn: 'Cuddling my pet', emoji: '🤗', category: 'Pet Care', type: 'ACTIVITY' },
-        { id: 'sleeping_pet', labelEn: 'Sleeping with pet', emoji: '😴', category: 'Pet Care', type: 'ACTIVITY' },
-
-        // ── Health & Vet ──
-        { id: 'vet_visit', labelEn: 'Vet visit', emoji: '🩺', category: 'Health & Vet', type: 'ACTIVITY' },
-        { id: 'pet_vaccination', labelEn: 'Pet vaccination', emoji: '💉', category: 'Health & Vet', type: 'ACTIVITY' },
-        { id: 'deworming', labelEn: 'Deworming', emoji: '💊', category: 'Health & Vet', type: 'ACTIVITY' },
-        { id: 'pet_checkup', labelEn: 'Pet checkup', emoji: '🏥', category: 'Health & Vet', type: 'ACTIVITY' },
-        { id: 'pet_recovery', labelEn: 'Pet recovery', emoji: '❤️‍🩹', category: 'Health & Vet', type: 'ACTIVITY' },
-        { id: 'pet_medicine', labelEn: 'Pet medicine', emoji: '💊', category: 'Health & Vet', type: 'ACTIVITY' },
-        { id: 'emergency_care', labelEn: 'Emergency care', emoji: '🚑', category: 'Health & Vet', type: 'ACTIVITY' },
-        { id: 'surgery_care', labelEn: 'Surgery care', emoji: '🏥', category: 'Health & Vet', type: 'ACTIVITY' },
-        { id: 'dental_care', labelEn: 'Dental care', emoji: '🦷', category: 'Health & Vet', type: 'ACTIVITY' },
-        { id: 'health_concern', labelEn: 'Health concern', emoji: '⚠️', category: 'Health & Vet', type: 'ACTIVITY' },
-
-        // ── Lost & Rescue ──
-        { id: 'searching_lost', labelEn: 'Searching lost pet', emoji: '🔍', category: 'Lost & Rescue', type: 'ACTIVITY' },
-        { id: 'found_pet', labelEn: 'Found a pet', emoji: '🐾', category: 'Lost & Rescue', type: 'ACTIVITY' },
-        { id: 'rescuing', labelEn: 'Rescuing pet', emoji: '🚒', category: 'Lost & Rescue', type: 'ACTIVITY' },
-        { id: 'adoption_day', labelEn: 'Adoption day', emoji: '🏡', category: 'Lost & Rescue', type: 'ACTIVITY' },
-        { id: 'looking_adopter', labelEn: 'Looking for adopter', emoji: '❤️', category: 'Lost & Rescue', type: 'ACTIVITY' },
-        { id: 'foster_care', labelEn: 'Foster care', emoji: '🏠', category: 'Lost & Rescue', type: 'ACTIVITY' },
-        { id: 'reunited', labelEn: 'Reunited with pet', emoji: '🤝', category: 'Lost & Rescue', type: 'ACTIVITY' },
-        { id: 'helping_stray', labelEn: 'Helping stray animals', emoji: '🐕', category: 'Lost & Rescue', type: 'ACTIVITY' },
-        { id: 'feeding_stray', labelEn: 'Feeding stray animals', emoji: '🍲', category: 'Lost & Rescue', type: 'ACTIVITY' },
-        { id: 'animal_welfare', labelEn: 'Animal welfare', emoji: '💚', category: 'Lost & Rescue', type: 'ACTIVITY' },
-      ];
-
-      // Filter by type if specified
-      let filtered = allItems;
-      if (type && (type === 'FEELING' || type === 'ACTIVITY')) {
-        filtered = filtered.filter((item) => item.type === type);
+      if (type === 'FEELING' || !type) {
+        const feelings = await service.getActivePostFeelings(q);
+        allItems.push(...feelings.map(f => ({
+          id: f.key,
+          labelEn: f.label,
+          emoji: f.emoji,
+          category: 'Feelings',
+          type: 'FEELING',
+        })));
       }
 
-      // Filter by search query if specified
-      if (q) {
-        filtered = filtered.filter(
-          (item) => item.labelEn.toLowerCase().includes(q) || item.id.includes(q)
-        );
+      if (type === 'ACTIVITY' || !type) {
+        const activities = await service.getActivePostActivities(q);
+        allItems.push(...activities.map(a => ({
+          id: a.key,
+          labelEn: a.label,
+          emoji: a.emoji,
+          category: a.category,
+          type: 'ACTIVITY',
+        })));
       }
 
-      sendSuccess(res, { data: filtered }, {
+      sendSuccess(res, { data: allItems }, {
         requestId: req.requestId,
         correlationId: req.correlationId,
       });

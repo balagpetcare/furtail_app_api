@@ -1437,3 +1437,77 @@ model FundraisingIdempotencyKey {
   @@unique([scope, ownerUserId, key])
   @@map("fundraising_idempotency_keys")
 }
+
+// ── Post Taxonomies ──
+// Admin-managed catalogs for Create Post selectors
+// All support search, sort order, and active/inactive toggling
+
+model PostFeeling {
+  id        Int     @id @default(autoincrement())
+  key       String  @unique @db.VarChar(64)
+  label     String  @db.VarChar(160)
+  emoji     String  @db.VarChar(8)
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("post_feelings")
+}
+
+model PostActivity {
+  id        Int     @id @default(autoincrement())
+  key       String  @unique @db.VarChar(64)
+  label     String  @db.VarChar(160)
+  emoji     String  @db.VarChar(8)
+  category  String  @db.VarChar(64) @default("General")
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder, category])
+  @@map("post_activities")
+}
+
+model PostCategoryTaxonomy {
+  id        Int     @id @default(autoincrement())
+  key       String  @unique @db.VarChar(64)
+  label     String  @db.VarChar(160)
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("post_category_taxonomies")
+}
+
+model ContentTag {
+  id        Int     @id @default(autoincrement())
+  key       String  @unique @db.VarChar(64)
+  label     String  @db.VarChar(160)
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("content_tags")
+}
+
+model BackgroundStyle {
+  id         Int     @id @default(autoincrement())
+  key        String  @unique @db.VarChar(64)
+  label      String  @db.VarChar(160)
+  styleType  String  @db.VarChar(32) @default("solid")
+  colorValue String? @db.VarChar(32)
+  sortOrder  Int     @default(0)
+  isActive   Boolean @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("background_styles")
+}
