@@ -1,8 +1,14 @@
 # FURTAIL SOCIAL ARCHITECTURE — CURRENT STATUS
 
-**Last Updated**: 2026-08-18
-**Repository State**: Uncommitted changes in Phase 2 implementation
-**Overall Status**: 🔴 NOT PRODUCTION READY - BLOCKED BY PRISMA MIGRATION
+**Last Updated**: 2026-08-18 (Mega Job Phase 3A investigation)
+**Repository State**: `furtail_app_api` working tree has 38 modified files; only
+`social-store.ts` is confirmed to contain solely the documented Phase 2 diff.
+`social.routes.ts` has a 1088-line diff, ~90% of which is unrelated, unreviewed,
+uncommitted feature work (discovery/suggestions/relationship-count endpoints).
+**Overall Status**: 🔴 NOT PRODUCTION READY — BLOCKED BY PRISMA MIGRATION AND BY
+unrelated uncommitted work entangled in the persistence-slice route file. See
+`docs/jobs/FURTAIL_PHASE_3_PERSISTENT_SOCIAL_CORE_JOB.md` § Phase 3A Investigation
+Findings for full evidence and the decision needed to unblock.
 
 ---
 

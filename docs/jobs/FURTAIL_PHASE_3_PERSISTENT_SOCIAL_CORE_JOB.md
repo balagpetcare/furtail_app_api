@@ -2,9 +2,98 @@
 
 **Job ID**: FURTAIL-PHASE-3-SOCIAL
 **Created**: 2026-08-18
-**Status**: NOT STARTED
-**Blocked By**: Awaiting explicit Phase 3 authorization
+**Status**: BLOCKED — see "Phase 3A Investigation Findings" below
+**Blocked By**: Uncommitted, unrelated feature work entangled in the exact files Phase 3B must edit
 **Estimated Duration**: TBD (after Phase 3A investigation and exact migration scope verification)
+
+---
+
+## PHASE 3A INVESTIGATION FINDINGS (2026-08-18, Mega Job run)
+
+### Repository topology (resolved)
+
+`D:\wpa\furtail` is **not** a monorepo — it is a plain filesystem workspace directory.
+Four independent Git repositories are nested inside it, each with full history and
+(except `furtail_web`) an `origin` remote on `github.com/balagpetcare/...`:
+
+| Repo | Remote | Notes |
+|---|---|---|
+| `furtail_app_api` | `github.com/balagpetcare/furtail_app_api` | Backend Shared Core API. This is where Post/idempotency work lives. |
+| `furtail_app` | `github.com/balagpetcare/furtail_app` | Flutter client. |
+| `furtail_web` | *(no remote configured)* | Next.js web client. Single "Initial commit from Create Next App". |
+| `furtail_api_previous` | `github.com/balagpetcare/furtail_api.git` | Appears to be a prior/legacy API repo, separate from `furtail_app_api`. |
+
+`D:\wpa\furtail\.git` (top level) was **not** an authoritative repository. It contained
+only `info/exclude` — no `HEAD`, `objects`, or `refs` — meaning it never held any commit
+history. A prior turn in this session ran `git init` on it, which created an empty
+repository (zero commits, verified via `git rev-list --all`). Since nothing existed
+there before, **no history or source was lost**. That stray `.git` has since been
+removed. `docs/status/` and `docs/jobs/` now live inside `furtail_app_api/docs/`,
+matching that repo's existing documentation convention (`architecture-decisions.md`,
+`migration-runbook.md`, etc. already live there).
+
+### Prisma persistence — confirmed, current baseline (committed HEAD `ae30418`)
+
+Searched all of `src/` for post write paths:
+- `grep -rn "prisma\.post\.\(create\|update\|delete\|upsert\)" src/` → **zero matches**
+- Only reads exist: `prisma.post.findMany` (search service) and `prisma.post.groupBy`
+  (people-discovery service) — neither writes.
+- `SocialCoreStore` (`src/modules/social/social-store.ts`) is constructed with a
+  `prisma` client (`src/app.ts:92`) but never calls it to persist Post rows. Posts are
+  held entirely in an in-memory `Map` inside the store instance.
+
+This independently confirms the Phase 2B finding: **posts do not persist to the
+database in any currently committed code path.**
+
+### NEW BLOCKER: uncommitted, unrelated work entangled in the persistence-slice files
+
+`furtail_app_api`'s working tree has **38 modified files** beyond the two touched by
+the documented Phase 2 change (`social-store.ts`, `social.routes.ts`), spanning
+adoption, fundraising, pets, media storage, auth middleware, error codes, and env
+config. None of this was authored as part of the Phase 1/2/2B work described in prior
+status docs — it predates this Mega Job run and its provenance/completeness cannot be
+determined from the repository alone.
+
+Critically, the two files Phase 3B must edit are themselves affected:
+
+- `src/routes/social.routes.ts`: diff is **1088 changed lines** (vs. the ~10 lines
+  documented for Phase 2's idempotency-header extraction). Inspecting the diff shows
+  12 new/modified route handlers unrelated to Post persistence — `/social/counts/:userId`,
+  `/social/discovery/suggestions`, `/social/discovery/suggestions/:userId/dismiss`,
+  `/social/discovery/search`, and others — apparently in-progress relationship/discovery
+  feature work.
+- `src/modules/social/social-store.ts`: diff is 172 lines, which does match the
+  documented Phase 2 idempotency + media-ownership scope (verified by grepping the
+  diff for `idempotenc`/`mediaIds` — all matches line up with the documented change).
+  This file is safe to build on.
+
+**Why this blocks Phase 3B:** implementing persistent Post storage requires editing
+`social.routes.ts` extensively (new Prisma-backed handlers for create/read/update/
+delete/feed). Doing that on top of an already 1088-line-diverged file, where roughly
+90% of the diff is unrelated and unreviewed, risks silently damaging or reverting
+in-progress discovery/relationship work, and risks producing a commit that mixes
+unrelated features with the persistence slice — both explicitly prohibited by this
+Mega Job's commit-discipline rules.
+
+**What is NOT blocked:** `social-store.ts` in isolation. Its current working-tree diff
+is fully accounted for as the documented Phase 2 idempotency/media-validation change,
+committed history is healthy, and the file could be extended for Prisma persistence
+without entanglement risk — but the route layer that calls it cannot be safely touched
+without first resolving the unrelated diff in `social.routes.ts`.
+
+**Minimum decision needed to resume Phase 3B:**
+1. Should the unrelated uncommitted work in `social.routes.ts` (and the other 37
+   files) be committed first, as its own reviewed commit(s), before Phase 3 begins?
+   If so, who reviews/authors that commit message — it is not part of this job.
+2. Alternatively, should Phase 3 proceed via `git stash` of the unrelated hunks
+   (isolating only Post-persistence-relevant lines), implemented and tested, then the
+   stash restored afterward? This is mechanically possible but requires explicit
+   authorization since it manipulates a large amount of someone else's uncommitted work.
+3. Alternatively, is there a clean base branch/commit Phase 3 should branch from
+   instead of the current dirty working tree?
+
+No production data, git history, or source code has been lost or altered by this
+investigation. All 38 files remain exactly as they were found, uncommitted.
 
 ---
 
