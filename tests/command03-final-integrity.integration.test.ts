@@ -19,7 +19,13 @@ import type { AuthenticatedPrincipal, TokenVerifier } from '../src/security/prin
  */
 describe('COMMAND 03: admin-to-Web proof for Feeling/Activity + reorder', () => {
   afterAll(async () => {
-    await getTestPrisma().$disconnect();
+    // Every key created in this suite is prefixed via uniqueKey('cmd03_...'),
+    // so cleanup can target them precisely without risking real seed data.
+    const prisma = getTestPrisma();
+    await prisma.postFeeling.deleteMany({ where: { key: { startsWith: 'cmd03_' } } });
+    await prisma.postActivity.deleteMany({ where: { key: { startsWith: 'cmd03_' } } });
+    await prisma.backgroundStyle.deleteMany({ where: { key: { startsWith: 'cmd03_' } } });
+    await prisma.$disconnect();
     await disconnectPrisma();
   });
 
