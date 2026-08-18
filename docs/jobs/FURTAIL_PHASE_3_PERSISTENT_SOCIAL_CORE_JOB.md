@@ -2,10 +2,13 @@
 
 **Job ID**: FURTAIL-PHASE-3-SOCIAL
 **Created**: 2026-08-18
-**Status**: 🟡 PHASE 3B PERSISTENT POST VERTICAL SLICE COMPLETE (development-verified) — see
-"Phase 3B Implementation" below. Not yet deployed to any shared/staging/production
-environment; not yet code-reviewed by a human; several explicitly out-of-scope
-gaps remain (listed below) as intentional, documented follow-up work.
+**Status**: 🟡 PHASE 3B PERSISTENT POST VERTICAL SLICE COMPLETE (development-verified),
+PLUS a post-implementation hotfix for a cold-start author-hydration regression
+found in production-shaped usage (feed as a viewer who is not the post's
+author) — see "Phase 3B Implementation" and "Hotfix: Author Hydration" below.
+Not yet deployed to any shared/staging/production environment; not yet
+code-reviewed by a human; several explicitly out-of-scope gaps remain (listed
+below) as intentional, documented follow-up work.
 **Blocked By**: nothing currently blocking
 **Estimated Duration**: Phase 3B took one continuous session once the dirty-tree
 isolation blocker was resolved.
@@ -121,6 +124,127 @@ needed in the Post-creation path itself.
 - Flutter: `flutter analyze`, `flutter test test/features/posts/`.
 - No destructive database commands were run. No production database was
   touched. Nothing was pushed to any remote.
+
+---
+
+## HOTFIX: AUTHOR HYDRATION ON COLD START (2026-08-18, fourth Mega Job run)
+
+### What the original Phase 3B restart test missed
+
+Every test in `tests/post-persistence.integration.test.ts` used the **same
+user as both post author and requesting viewer**. Every authenticated HTTP
+request goes through `readUserId()` → `store.resolveUserId(principal)` →
+`ensureUserShadow()`, which hydrates the *requesting user's own* shadow into
+`this.users` as a side effect of authentication — regardless of Post
+persistence. So in every one of those tests, the moment the viewer
+authenticated against a fresh store, their own record (which happened to also
+be the post's author) was already in the cache before `serializePost()` ever
+ran. The restart test genuinely proved Post/PostMedia/idempotency durability;
+it did not exercise the author-lookup path at all, because it could never
+produce a cache miss on `this.users`.
+
+### Root cause
+
+- `mustGetUser()` (`social-store.ts`) reads only `this.users` — an in-memory
+  Map — with no Prisma fallback of its own, unlike `mustGetPost()` (which
+  gained one in Phase 3B via `mustGetPersistedPost()`).
+- `serializePost()` calls `mustGetUser(post.authorId)` unconditionally.
+- `POST_PERSISTENCE_INCLUDE` (the single Prisma `include` shape every
+  persisted-Post load path shares) hydrated `media` and `taggedPets` but not
+  `author`.
+- `cachePostRow()` (the shared cache-warming chokepoint for every load path)
+  warmed the Post and Media caches but never touched `this.users`.
+- Net effect: a persisted Post whose author's shadow was never independently
+  populated in a given process (any viewer other than the author themself,
+  on a cold-started process) threw `Error: User not found` inside
+  `serializePost()`, surfacing as HTTP 500 on `GET /api/v1/posts/feed`,
+  `GET /api/v1/posts/:id`, and idempotency-replay reads.
+
+Reproduced directly against the code before the fix (see commit diff): a
+script authenticating as user A (author, populates their own shadow via
+`resolveUserId`), creating a Post, then querying the feed from a **fresh**
+store as user A again — did NOT reproduce it, confirming the same-user blind
+spot above. Querying as a **different** user B against the fresh store
+reproduced `Error: User not found` exactly as reported.
+
+### Fix
+
+- `POST_PERSISTENCE_INCLUDE.author` now selects `id`, `createdAt`, and the
+  full `profile` (including the `avatarMedia` relation) for the Post's
+  author, in the same query as the Post itself — no extra round trip.
+- New `PersistedAuthorRow` type and `mapUserRowToRecord()` function
+  (`social-store.ts`) map that row to the existing `UserRecord` shape.
+  Returns `null` — never a fabricated record — when the author row has no
+  `UserProfile` (a User can exist without one per schema; per instruction,
+  this is treated as diagnosable data corruption, not silently patched over
+  with a placeholder "Unknown User").
+- `cachePostRow()` — the one chokepoint every persisted-Post load path
+  already shares (`loadPersistedPostById`, `loadPersistedPostByIdempotencyKey`,
+  `ensureFeedCacheWarm`, and the Prisma responses from create/update/delete
+  themselves) — now also caches the author (via `mapUserRowToRecord`) and,
+  when present, their avatar Media (via the existing `mapMediaRowToRecord`),
+  so `mustGetUser()` and `mediaPayload()` never miss for a freshly-loaded
+  post's author, regardless of which entry point loaded it.
+- Deliberately does **not** populate `auth.email`/`auth.phone` on the
+  hydrated `UserRecord` — nothing in the Post-serialization path reads them,
+  and fetching real contact fields to satisfy the record's shape would leak
+  sensitive data with no caller that needs it.
+- `mustGetUser()` itself is unchanged — still throws `Error('User not
+  found')` on a genuine cache miss. The fix is that persisted-Post loading
+  now ensures that miss essentially can't happen for a Post's own author;
+  it does not paper over the error case.
+
+### Tests added
+
+`tests/post-author-hydration.integration.test.ts` — 8 tests, all
+constructing a viewer distinct from the post's author against a fresh store
+(the actual reproduction shape):
+1. single persisted Post, viewer ≠ author, cold start
+2. two posts by two different authors hydrated correctly in one feed load
+3. author with no avatar → `avatarMedia: null`, not a "Media not found" crash
+4. author with an avatar → avatar Media correctly hydrated and returned
+5. `getPostById` after a fresh store, viewer ≠ author
+6. idempotency replay after a fresh store still serializes the author
+7. existing response author shape unchanged: `{id, profile: {displayName,
+   username, avatarMedia}}`
+8. a Post authored by a User with no UserProfile row fails honestly with 404
+   (via the existing generic "not found" → `AppError.notFound` mapping), not
+   a 200 with fabricated author data
+
+Verified these tests actually catch the regression: reverted the fix with
+`git stash` while keeping the new test file, re-ran — 5 of 8 failed exactly
+as expected (the 3 same-author-as-viewer-adjacent tests still passed,
+consistent with the root-cause analysis above). Restored the fix; all 8 pass.
+
+### Verification performed
+
+- `npx tsc --noEmit`: clean.
+- `npx eslint src/modules/social/social-store.ts`: clean.
+- `npx prisma validate`: valid (query-shape-only change, no schema/migration
+  edit was needed).
+- Full Jest suite, `--runInBand`: 364/365 passing. The one failure
+  (`tests/pets.integration.test.ts`'s duplicate-follow test) is the same
+  pre-existing, previously-documented, confirmed-unrelated flake from the
+  Phase 3B run — not hidden, still present, still unrelated (pets/follow
+  state, nothing to do with Post author hydration).
+- **Manual runtime verification (mandatory for a cold-start bug)**: ran the
+  real `createAppWithDependencies()` app, real Express routes, real Prisma
+  client, against the real local dev database (`furtail_app_local`,
+  `DATABASE_URL` from `.env`) as **two separate `npx tsx` process
+  invocations** (a genuine OS-level restart, not just a new store instance
+  within one process) on port 7301. Full central-auth JWT verification (the
+  literal production auth path) needs a token signed against a live
+  central-auth JWKS endpoint, unreachable in this environment — substituted
+  the same lightweight bearer-token verifier (`user-<id>`) the integration
+  test suite already uses, which exercises every part of the real stack
+  except JWT signature verification itself. Both runs: `GET
+  /api/v1/posts/feed?limit=10` → HTTP 200, the persisted post found in the
+  response, author avatar present. The second (post-restart) run explicitly
+  logged "reused existing author ... (this proves it survived a real process
+  exit)" — confirming the data and the fix both worked across a real
+  restart, not just in-memory-within-one-process. Test data (the
+  manual-verify author/viewer/post/avatar) was cleaned from the dev database
+  afterward; no data was deleted that existed before this verification.
 
 ---
 

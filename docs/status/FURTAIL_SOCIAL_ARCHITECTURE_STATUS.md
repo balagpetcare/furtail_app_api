@@ -1,12 +1,18 @@
 # FURTAIL SOCIAL ARCHITECTURE — CURRENT STATUS
 
-**Last Updated**: 2026-08-18 (Phase 3B implementation run)
+**Last Updated**: 2026-08-18 (author-hydration hotfix run)
 **Repository State**: Persistent Post vertical slice implemented and committed
 on `feature/persistent-social-core` in all three repos (`furtail_app_api`
-`1ad464b`, `furtail_web` `8ac606b`, `furtail_app` `e88c041`). Pre-existing
-entangled WIP (messaging/presence/realtime/search/discovery/relationship-count
-work) safely preserved, untouched, on `wip/pre-phase3-snapshot-20260818` in
-each repo — not part of this slice.
+`1ad464b`, `furtail_web` `8ac606b`, `furtail_app` `e88c041`), pushed to origin
+for `furtail_app_api` and `furtail_app` (`furtail_web` has no configured
+origin). A cold-start regression in that implementation — `GET
+/api/v1/posts/feed` returning HTTP 500 ("User not found") when the viewer is
+not the post's author on a freshly-started process — was found and fixed;
+see `docs/jobs/FURTAIL_PHASE_3_PERSISTENT_SOCIAL_CORE_JOB.md` § Hotfix: Author
+Hydration for the full root-cause and fix writeup. Pre-existing entangled WIP
+(messaging/presence/realtime/search/discovery/relationship-count work) safely
+preserved, untouched, on `wip/pre-phase3-snapshot-20260818` in each repo — not
+part of this slice.
 **Overall Status**: 🟡 DEVELOPMENT READY, NOT YET PRODUCTION READY. Posts,
 their media, and create-idempotency now genuinely persist to Prisma/PostgreSQL
 and survive a process restart — verified by integration tests that construct a

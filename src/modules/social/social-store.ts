@@ -274,6 +274,34 @@ interface PersistedPostRow {
   updatedAt: Date;
   media: { position: number; media: Parameters<typeof mapMediaRowToRecord>[0] }[];
   taggedPets: { petId: number }[];
+  author: PersistedAuthorRow;
+}
+
+interface PersistedAuthorRow {
+  id: number;
+  createdAt: Date;
+  profile: {
+    username: string;
+    displayName: string;
+    bio: string | null;
+    visibility: string;
+    showEmail: boolean;
+    showPhone: boolean;
+    avatarMediaId: number | null;
+    coverMediaId: number | null;
+    education: string | null;
+    placeLive: string | null;
+    fansAndFriends: string | null;
+    from: string | null;
+    profileType: string | null;
+    workStatus: string | null;
+    religiousStatus: string | null;
+    gender: string | null;
+    birthdate: Date | null;
+    maritalStatus: string | null;
+    isLocked: boolean;
+    avatarMedia: Parameters<typeof mapMediaRowToRecord>[0] | null;
+  } | null;
 }
 
 /**
@@ -319,6 +347,53 @@ function mapPostRowToRecord(row: PersistedPostRow): PostRecord {
   };
 }
 
+/**
+ * Returns null (never a fabricated record) when the author row has no
+ * profile — a User can exist without a UserProfile per schema
+ * (`User.profile UserProfile?`), and on the Post.author onDelete: Cascade
+ * relation that should be unreachable for a genuinely valid Post, so
+ * treating it as absent (mustGetUser's existing "User not found") rather
+ * than inventing placeholder profile data keeps that state diagnosable
+ * instead of silently papering over what would be a real data-integrity
+ * problem.
+ *
+ * Deliberately does not populate `auth.email`/`auth.phone` from the
+ * database — nothing in the Post-serialization path reads them, and
+ * fetching real contact fields just to satisfy this record's shape would
+ * expose sensitive data with no caller that needs it.
+ */
+function mapUserRowToRecord(row: PersistedAuthorRow): UserRecord | null {
+  const profile = row.profile;
+  if (!profile) return null;
+  return {
+    id: row.id,
+    auth: { email: '', phone: null },
+    profile: {
+      displayName: profile.displayName,
+      username: profile.username,
+      bio: profile.bio,
+      visibility: profile.visibility as ProfileVisibility,
+      showEmail: profile.showEmail,
+      showPhone: profile.showPhone,
+      avatarMediaId: profile.avatarMediaId,
+      coverMediaId: profile.coverMediaId,
+      education: profile.education,
+      placeLive: profile.placeLive,
+      fansAndFriends: profile.fansAndFriends,
+      from: profile.from,
+      profileType: profile.profileType,
+      workStatus: profile.workStatus,
+      religiousStatus: profile.religiousStatus,
+      gender: profile.gender,
+      birthdate: profile.birthdate,
+      maritalStatus: profile.maritalStatus,
+      isLocked: profile.isLocked,
+    },
+    wallet: { points: 0, balance: 0, tier: null },
+    createdAt: row.createdAt,
+  };
+}
+
 const POST_PERSISTENCE_INCLUDE = {
   // Full Media row (not just the id) so callers can warm the media cache
   // in the same query — without this, serializePost's mediaPayload() would
@@ -327,6 +402,24 @@ const POST_PERSISTENCE_INCLUDE = {
   // post cache are otherwise populated independently.
   media: { select: { position: true, media: true } },
   taggedPets: { select: { petId: true } },
+  // authorPayload()/serializePost() call the synchronous mustGetUser(),
+  // which only ever reads the in-memory `this.users` cache — it has no
+  // Prisma fallback of its own (unlike mustGetPost, which now does via
+  // mustGetPersistedPost). A Post loaded fresh from Prisma (cold start,
+  // another process created it) previously left its author absent from
+  // that cache, throwing "User not found" — see cachePostRow(), which is
+  // the single chokepoint that now warms the author (and their avatar
+  // Media) alongside the post itself so mustGetUser() never has to reach
+  // past this include.
+  author: {
+    select: {
+      id: true,
+      createdAt: true,
+      profile: {
+        include: { avatarMedia: true },
+      },
+    },
+  },
 } as const;
 
 interface PostCreateFields {
@@ -2884,6 +2977,20 @@ export class SocialCoreStore {
    */
   private cachePostRow(row: PersistedPostRow): PostRecord {
     for (const item of row.media) this.cacheMediaRecord(mapMediaRowToRecord(item.media));
+    // Warms mustGetUser()'s cache with the Post's author — mustGetUser()
+    // has no Prisma fallback of its own (see POST_PERSISTENCE_INCLUDE's
+    // `author` comment), so every path that loads a persisted Post must go
+    // through here for serializePost()'s author lookup to succeed after a
+    // cold start. mapUserRowToRecord() returns null (leaving mustGetUser's
+    // existing "User not found" as the honest failure) rather than
+    // fabricating a record if the author row has no profile.
+    const authorRecord = mapUserRowToRecord(row.author);
+    if (authorRecord) {
+      this.users.set(authorRecord.id, authorRecord);
+      if (row.author.profile?.avatarMedia) {
+        this.cacheMediaRecord(mapMediaRowToRecord(row.author.profile.avatarMedia));
+      }
+    }
     return this.cachePostRecord(mapPostRowToRecord(row));
   }
 
