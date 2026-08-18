@@ -472,6 +472,7 @@ export interface SocialPostUpsertInput {
   activityId?: string | null;
   activityLabel?: string | null;
   activityEmoji?: string | null;
+  idempotencyKey?: string | null;
 }
 
 export interface SocialMediaLookupPayload {
@@ -903,6 +904,14 @@ export class SocialCoreStore {
    * record instead of storing a duplicate file.
    */
   private readonly uploadIdempotencyKeys = new Map<string, number>();
+
+  /**
+   * Keyed by `${authorUserId}:${idempotencyKey}` — a retried post creation
+   * (same user, same client-supplied key) returns the already-created post
+   * instead of creating a duplicate. Scope is per-user to prevent one user's
+   * key from colliding with another's.
+   */
+  private readonly postCreationIdempotencyKeys = new Map<string, number>();
 
   async uploadMedia(
     ownerUserId: number,
@@ -1803,6 +1812,31 @@ export class SocialCoreStore {
   }
 
   createPost(userId: number, input: SocialPostUpsertInput): SocialPostPayload {
+    // Idempotency: check if this exact post creation already exists
+    const idempotencyKey = input.idempotencyKey?.trim() || null;
+    if (idempotencyKey) {
+      const dedupeKey = `${userId}:${idempotencyKey}`;
+      const existingPostId = this.postCreationIdempotencyKeys.get(dedupeKey);
+      if (existingPostId) {
+        // Retried request — return the original post
+        return this.serializePost(existingPostId, userId);
+      }
+    }
+
+    // Media ownership validation: verify all media IDs belong to the authenticated user
+    const mediaIds = safeArray<number>(input.mediaIds)
+      .map((value) => Number(value))
+      .filter(Number.isFinite);
+    for (const mediaId of mediaIds) {
+      const media = this.media.get(mediaId);
+      if (!media) {
+        throw new Error(`Invalid media reference`);
+      }
+      if (media.ownerUserId !== userId) {
+        throw new Error(`Media is not owned by the current user`);
+      }
+    }
+
     const post = this.createPostRecord({
       authorId: userId,
       type: (input.type?.toString().toUpperCase() as PostType) || 'TEXT',
@@ -1814,9 +1848,7 @@ export class SocialCoreStore {
       lostPetName: normalizeText(input.lostPetName),
       lostPetLocation: normalizeText(input.lostPetLocation),
       lostPetContactVisible: input.lostPetContactVisible ?? false,
-      mediaIds: safeArray<number>(input.mediaIds)
-        .map((value) => Number(value))
-        .filter(Number.isFinite),
+      mediaIds: mediaIds,
       taggedPetIds: safeArray<number>(input.taggedPetIds)
         .map((value) => Number(value))
         .filter(Number.isFinite),
@@ -1832,6 +1864,13 @@ export class SocialCoreStore {
       activityLabel: normalizeText(input.activityLabel),
       activityEmoji: normalizeText(input.activityEmoji),
     });
+
+    // Record idempotency key after successful creation
+    if (idempotencyKey) {
+      const dedupeKey = `${userId}:${idempotencyKey}`;
+      this.postCreationIdempotencyKeys.set(dedupeKey, post.id);
+    }
+
     return this.serializePost(post.id, userId);
   }
 
@@ -1848,10 +1887,22 @@ export class SocialCoreStore {
       post.type = input.type.toString().toUpperCase() as PostType;
     if (input.category !== undefined && input.category)
       post.category = input.category.toString().toUpperCase() as PostCategory;
-    if (input.mediaIds !== undefined)
-      post.mediaIds = safeArray<number>(input.mediaIds)
+    if (input.mediaIds !== undefined) {
+      // Media ownership validation: verify all media IDs belong to the authenticated user
+      const newMediaIds = safeArray<number>(input.mediaIds)
         .map((value) => Number(value))
         .filter(Number.isFinite);
+      for (const mediaId of newMediaIds) {
+        const media = this.media.get(mediaId);
+        if (!media) {
+          throw new Error(`Invalid media reference`);
+        }
+        if (media.ownerUserId !== userId) {
+          throw new Error(`Media is not owned by the current user`);
+        }
+      }
+      post.mediaIds = newMediaIds;
+    }
     if (input.privacy !== undefined && input.privacy)
       post.privacy = input.privacy.toString().toUpperCase() as PostPrivacy;
     if (input.postType !== undefined) post.postType = normalizeText(input.postType);

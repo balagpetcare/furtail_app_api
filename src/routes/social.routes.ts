@@ -1033,6 +1033,12 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     asyncHandler(async (req, res) => {
       const viewerId = await readUserId(req, store);
       try {
+        // Idempotency support: extract key from header or body (body is fallback for clients that can't set headers)
+        const idempotencyKey =
+          (typeof req.headers['idempotency-key'] === 'string' && req.headers['idempotency-key']) ||
+          normalizeContentField(req.body?.idempotencyKey) ||
+          undefined;
+
         const post = store.createPost(viewerId, {
           caption: req.body?.caption,
           type: req.body?.type,
@@ -1056,6 +1062,7 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
           activityId: req.body?.activityId,
           activityLabel: req.body?.activityLabel,
           activityEmoji: req.body?.activityEmoji,
+          idempotencyKey,
         });
         sendSuccess(res, post, {
           requestId: req.requestId,
