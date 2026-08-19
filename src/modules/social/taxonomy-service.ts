@@ -1,5 +1,18 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 
+/** Canonical Create Post composer limits — the single source of truth for
+ * both the caption length policy and the text-background eligibility
+ * threshold. Used as the fallback whenever no PostComposerConfig row
+ * exists yet (fresh database, no admin edit made), and as the seed values
+ * an admin edit starts from. See PostComposerConfig in schema.prisma. */
+export const DEFAULT_MAX_CAPTION_CHARACTERS = 5000;
+export const DEFAULT_MAX_BACKGROUND_CAPTION_CHARACTERS = 300;
+
+export interface PostComposerConfig {
+  maxCaptionCharacters: number;
+  maxBackgroundCaptionCharacters: number;
+}
+
 export interface TaxonomyOption {
   id: number;
   key: string;
@@ -432,6 +445,40 @@ export class TaxonomyService {
       if (isRecordNotFoundError(error)) throw new TaxonomyNotFoundError();
       throw error;
     }
+  }
+
+  // ── Post Composer Config (singleton) ─────────────────────────────────
+
+  async getPostComposerConfig(): Promise<PostComposerConfig> {
+    const row = await this.prisma.postComposerConfig.findUnique({ where: { id: 1 } });
+    return {
+      maxCaptionCharacters: row?.maxCaptionCharacters ?? DEFAULT_MAX_CAPTION_CHARACTERS,
+      maxBackgroundCaptionCharacters:
+        row?.maxBackgroundCaptionCharacters ?? DEFAULT_MAX_BACKGROUND_CAPTION_CHARACTERS,
+    };
+  }
+
+  async updatePostComposerConfig(data: {
+    maxCaptionCharacters?: number;
+    maxBackgroundCaptionCharacters?: number;
+  }): Promise<PostComposerConfig> {
+    const row = await this.prisma.postComposerConfig.upsert({
+      where: { id: 1 },
+      update: {
+        maxCaptionCharacters: data.maxCaptionCharacters,
+        maxBackgroundCaptionCharacters: data.maxBackgroundCaptionCharacters,
+      },
+      create: {
+        id: 1,
+        maxCaptionCharacters: data.maxCaptionCharacters ?? DEFAULT_MAX_CAPTION_CHARACTERS,
+        maxBackgroundCaptionCharacters:
+          data.maxBackgroundCaptionCharacters ?? DEFAULT_MAX_BACKGROUND_CAPTION_CHARACTERS,
+      },
+    });
+    return {
+      maxCaptionCharacters: row.maxCaptionCharacters,
+      maxBackgroundCaptionCharacters: row.maxBackgroundCaptionCharacters,
+    };
   }
 }
 

@@ -16,6 +16,11 @@ import type {
 import { buildMediaPublicUrl } from '../media/media-storage';
 import { InMemoryMediaStorageAdapter } from '../media/media-storage';
 import type { AuthenticatedPrincipal } from '../../security/principal';
+import { AppError } from '../../core/errors/app-error';
+import {
+  DEFAULT_MAX_CAPTION_CHARACTERS,
+  DEFAULT_MAX_BACKGROUND_CAPTION_CHARACTERS,
+} from './taxonomy-service';
 
 export type ProfileVisibility = 'PUBLIC' | 'FOLLOWERS_ONLY' | 'PRIVATE';
 export type PostPrivacy = 'PUBLIC' | 'FOLLOWERS_ONLY' | 'PRIVATE';
@@ -413,7 +418,7 @@ const POST_PERSISTENCE_INCLUDE = {
   // fresh from Prisma after a cold start, since the media cache and the
   // post cache are otherwise populated independently.
   media: { select: { position: true, media: true } },
-  taggedPets: { select: { petId: true } },
+  taggedPets: { select: { petId: true, pet: { select: { id: true, name: true, profilePicId: true } } } },
   // Full {id, key, label} per tag (not just the id) so serializePost's
   // content tag cache is warmed in this same query, mirroring the media
   // include's rationale above — a fresh Post load must never need a
@@ -853,6 +858,7 @@ export class SocialCoreStore {
    * synchronous method — can resolve a Post's content tag labels without an
    * extra async Prisma round trip. */
   private readonly contentTagCache = new Map<number, { id: number; key: string; label: string }>();
+  private readonly taggedPetCache = new Map<number, { id: number; name: string; photo: string | null }>();
   private readonly comments = new Map<number, CommentRecord>();
   private readonly gallery = new Map<number, GalleryItemRecord[]>();
   private readonly follows = new Set<string>();
@@ -2181,6 +2187,55 @@ export class SocialCoreStore {
     return tagIds;
   }
 
+  /** Always queried fresh (no caching), matching this file's convention for
+   * every other admin-editable taxonomy lookup — a single-row PK read is
+   * cheap, and it means an admin edit to the composer config takes effect
+   * on the very next request without an API restart. Falls back to the
+   * DEFAULT_* constants when Prisma isn't configured (in-memory dev mode)
+   * or no config row has been created yet. */
+  private async getComposerLimits(): Promise<{
+    maxCaptionCharacters: number;
+    maxBackgroundCaptionCharacters: number;
+  }> {
+    if (!this.mediaPrisma) {
+      return {
+        maxCaptionCharacters: DEFAULT_MAX_CAPTION_CHARACTERS,
+        maxBackgroundCaptionCharacters: DEFAULT_MAX_BACKGROUND_CAPTION_CHARACTERS,
+      };
+    }
+    const row = await this.mediaPrisma.postComposerConfig.findUnique({ where: { id: 1 } });
+    return {
+      maxCaptionCharacters: row?.maxCaptionCharacters ?? DEFAULT_MAX_CAPTION_CHARACTERS,
+      maxBackgroundCaptionCharacters:
+        row?.maxBackgroundCaptionCharacters ?? DEFAULT_MAX_BACKGROUND_CAPTION_CHARACTERS,
+    };
+  }
+
+  /** The two backend-authoritative Create/Update Post invariants Web's UX
+   * is expected to prevent the user from ever reaching: an overall caption
+   * length cap, and media/background mutual exclusivity. Web clearing the
+   * field client-side is a UX nicety, not the enforcement boundary — this
+   * is, so Flutter/older clients/direct API callers can't bypass either
+   * rule. `backgroundStyle` participates in the exclusivity check only
+   * when it's an actual selected style (a truthy string) — the canonical
+   * "no background" value is null, which never conflicts with media. */
+  private async assertComposerInvariants(
+    caption: string | null,
+    backgroundStyle: string | null,
+    mediaIds: number[],
+  ): Promise<void> {
+    const limits = await this.getComposerLimits();
+    if (caption && caption.length > limits.maxCaptionCharacters) {
+      throw AppError.postCaptionTooLong(
+        `Caption exceeds the maximum of ${limits.maxCaptionCharacters} characters`,
+        { maxCaptionCharacters: limits.maxCaptionCharacters, length: caption.length },
+      );
+    }
+    if (backgroundStyle && mediaIds.length > 0) {
+      throw AppError.postBackgroundWithMediaNotAllowed();
+    }
+  }
+
   async createPost(userId: number, input: SocialPostUpsertInput): Promise<SocialPostPayload> {
     const idempotencyKey = input.idempotencyKey?.trim() || null;
 
@@ -2211,6 +2266,8 @@ export class SocialCoreStore {
       activityLabel: normalizeText(input.activityLabel),
       activityEmoji: normalizeText(input.activityEmoji),
     };
+
+    await this.assertComposerInvariants(fields.caption, fields.backgroundStyle, fields.mediaIds);
 
     if (idempotencyKey) {
       // Fast path: this process already served this key (covers the common
@@ -2328,6 +2385,16 @@ export class SocialCoreStore {
       input.mediaIds !== undefined
         ? await this.validateAndNormalizePostMediaIds(userId, input.mediaIds)
         : undefined;
+
+    // Validate the EFFECTIVE post state (incoming change merged onto what's
+    // already persisted), not just the fields this particular PATCH
+    // touched — a PATCH that only sends `backgroundStyle` while the post
+    // already has media (or vice versa) must be caught here too.
+    const effectiveCaption = input.caption !== undefined ? normalizeText(input.caption) : post.caption;
+    const effectiveBackgroundStyle =
+      input.backgroundStyle !== undefined ? normalizeText(input.backgroundStyle) : post.backgroundStyle;
+    const effectiveMediaIds = nextMediaIds !== undefined ? nextMediaIds : post.mediaIds;
+    await this.assertComposerInvariants(effectiveCaption, effectiveBackgroundStyle, effectiveMediaIds);
 
     if (this.mediaPrisma) {
       const row = await this.mediaPrisma.$transaction(async (tx) => {
@@ -3121,6 +3188,17 @@ export class SocialCoreStore {
   private cachePostRow(row: PersistedPostRow): PostRecord {
     for (const item of row.media) this.cacheMediaRecord(mapMediaRowToRecord(item.media));
     for (const item of row.contentTags) this.contentTagCache.set(item.tag.id, item.tag);
+    if ((row as any).taggedPets) {
+      for (const item of (row as any).taggedPets) {
+        if (item.pet) {
+          this.taggedPetCache.set(item.petId, {
+            id: item.petId,
+            name: item.pet.name,
+            photo: item.pet.profilePicId ? this.mediaPayload(item.pet.profilePicId)?.url ?? null : null,
+          });
+        }
+      }
+    }
     if (row.likes) {
       for (const like of row.likes) {
         this.postLikes.set(keyPair(like.userId, row.id), like.reactionType);
@@ -3251,7 +3329,9 @@ export class SocialCoreStore {
       lostPetLocation: post.lostPetLocation,
       lostPetContactVisible: post.lostPetContactVisible,
       taggedPetIds: [...post.taggedPetIds],
-      taggedPets: post.taggedPetIds.map((id) => ({ id, name: `Pet ${id}`, photo: null })),
+      taggedPets: post.taggedPetIds
+        .map((id) => this.taggedPetCache.get(id))
+        .filter((pet): pet is { id: number; name: string; photo: string | null } => Boolean(pet)),
       // Real cached {id, key, label} per tag (warmed by cachePostRow /
       // validateAndNormalizeContentTagIds) — never fabricated, unlike
       // taggedPets above whose name/photo placeholders stand in for a Pet

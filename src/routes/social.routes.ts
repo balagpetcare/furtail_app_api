@@ -1637,6 +1637,25 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     }),
   );
 
+  // Canonical caption-length / background-eligibility limits — the single
+  // config source Web reads instead of hardcoding 5000/300 (see
+  // PostComposerConfig in schema.prisma).
+  router.get(
+    '/api/v1/taxonomies/post-composer-config',
+    optional,
+    asyncHandler(async (req, res) => {
+      if (!prisma) {
+        throw AppError.internal('Database not available');
+      }
+      const service = new TaxonomyService(prisma);
+      const data = await service.getPostComposerConfig();
+      sendSuccess(res, { data }, {
+        requestId: req.requestId,
+        correlationId: req.correlationId,
+      });
+    }),
+  );
+
   // Backward-compatible feeling-activities endpoint (for Flutter compatibility)
   router.get(
     '/api/v1/feeling-activities',
@@ -2087,6 +2106,30 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       } catch (error) {
         throw mapTaxonomyError(error, 'Failed to delete background style');
       }
+    }),
+  );
+
+  router.patch(
+    '/api/v1/admin/taxonomies/post-composer-config',
+    required,
+    adminOnly,
+    asyncHandler(async (req, res) => {
+      if (!prisma) throw AppError.internal('Database not available');
+      const service = new TaxonomyService(prisma);
+      const maxCaptionCharacters = toOptionalPositiveInt(req.body?.maxCaptionCharacters);
+      const maxBackgroundCaptionCharacters = toOptionalPositiveInt(
+        req.body?.maxBackgroundCaptionCharacters,
+      );
+      if (maxCaptionCharacters === undefined && maxBackgroundCaptionCharacters === undefined) {
+        throw AppError.validation(
+          'Provide maxCaptionCharacters and/or maxBackgroundCaptionCharacters',
+        );
+      }
+      const data = await service.updatePostComposerConfig({
+        maxCaptionCharacters,
+        maxBackgroundCaptionCharacters,
+      });
+      sendSuccess(res, { data }, { requestId: req.requestId, correlationId: req.correlationId });
     }),
   );
 

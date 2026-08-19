@@ -119,7 +119,12 @@ describe('persistent Post vertical slice (Prisma-backed)', () => {
           type: 'IMAGE',
           category: 'GENERAL',
           privacy: 'FOLLOWERS_ONLY',
-          backgroundStyle: 'sunset',
+          // No backgroundStyle here deliberately: media + text background
+          // are mutually exclusive (SELECTOR ICONS + TEXT SCROLL + TEXT
+          // LIMIT + BACKGROUND/MEDIA EXCLUSIVITY §17) — this test already
+          // has mediaIds below, so combining the two would now be a 400,
+          // not the 201 this test asserts. Background-with-no-media is
+          // covered separately by composer-invariants.integration.test.ts.
           postType: 'LOST_PET',
           lostPetName: 'Milo',
           lostPetLocation: 'Dhanmondi',
@@ -150,7 +155,6 @@ describe('persistent Post vertical slice (Prisma-backed)', () => {
       expect(post.caption).toBe('full metadata post');
       expect(post.type).toBe('IMAGE');
       expect(post.privacy).toBe('FOLLOWERS_ONLY');
-      expect(post.backgroundStyle).toBe('sunset');
       expect(post.postType).toBe('LOST_PET');
       expect(post.lostPetName).toBe('Milo');
       expect(post.lostPetLocation).toBe('Dhanmondi');

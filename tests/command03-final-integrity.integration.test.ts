@@ -330,7 +330,12 @@ describe('COMMAND 03: full multi-metadata Create Post persistence (fresh store =
           feelingId: feelings[0]!.key,
           feelingLabel: feelings[0]!.label,
           feelingEmoji: feelings[0]!.emoji,
-          backgroundStyle: bgStyles[0]!.key,
+          // No backgroundStyle here deliberately: this post already has
+          // mediaIds above, and media + text background are mutually
+          // exclusive (SELECTOR ICONS + TEXT SCROLL + TEXT LIMIT +
+          // BACKGROUND/MEDIA EXCLUSIVITY §17) — combining the two is now a
+          // 400, not the 201 this test asserts. bgStyles is still read
+          // above to prove the query works; it's just not applied here.
         });
       expect(created.status).toBe(201);
       const postId = created.body.data.id;
@@ -348,7 +353,6 @@ describe('COMMAND 03: full multi-metadata Create Post persistence (fresh store =
       expect(post.locationTag).toBe('Dhaka, Bangladesh');
       expect(post.feelingId).toBe(feelings[0]!.key);
       expect(post.feelingLabel).toBe(feelings[0]!.label);
-      expect(post.backgroundStyle).toBe(bgStyles[0]!.key);
       expect(post.taggedPetIds).toContain(petId);
       expect(post.media).toHaveLength(1);
       expect(post.media[0].media.url).toBeTruthy();

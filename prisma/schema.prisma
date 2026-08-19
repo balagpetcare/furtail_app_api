@@ -1510,6 +1510,21 @@ model ContentTag {
   @@map("content_tags")
 }
 
+/// Singleton (id is always 1) canonical Create Post composer configuration —
+/// the one small config source for values that must not be scattered as
+/// magic numbers across Web/Backend/Flutter. Read via TaxonomyService.
+/// getPostComposerConfig() (falls back to the DEFAULT_* constants there if
+/// this row doesn't exist yet — no seed migration required), edited via
+/// PATCH /api/v1/admin/taxonomies/post-composer-config.
+model PostComposerConfig {
+  id                             Int      @id @default(1)
+  maxCaptionCharacters           Int      @default(5000)
+  maxBackgroundCaptionCharacters Int      @default(300)
+  updatedAt                      DateTime @updatedAt
+
+  @@map("post_composer_config")
+}
+
 model PostContentTag {
   id     Int        @id @default(autoincrement())
   postId Int

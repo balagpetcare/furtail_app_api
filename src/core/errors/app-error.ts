@@ -286,4 +286,15 @@ export class AppError extends Error {
   static internal(message = 'Internal server error'): AppError {
     return new AppError(ErrorCode.INTERNAL_ERROR, message, 500);
   }
+
+  static postCaptionTooLong(message: string, details?: unknown): AppError {
+    return new AppError(ErrorCode.POST_CAPTION_TOO_LONG, message, 400, details);
+  }
+
+  static postBackgroundWithMediaNotAllowed(
+    message = 'A post cannot have both media and a text background',
+    details?: unknown,
+  ): AppError {
+    return new AppError(ErrorCode.POST_BACKGROUND_WITH_MEDIA_NOT_ALLOWED, message, 400, details);
+  }
 }
