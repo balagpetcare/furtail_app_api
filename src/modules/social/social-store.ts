@@ -287,7 +287,15 @@ interface PersistedPostRow {
   createdAt: Date;
   updatedAt: Date;
   media: { position: number; media: Parameters<typeof mapMediaRowToRecord>[0] }[];
-  taggedPets: { petId: number }[];
+  taggedPets: {
+    petId: number;
+    pet: {
+      id: number;
+      name: string;
+      profilePicId: number | null;
+      profilePic: Parameters<typeof mapMediaRowToRecord>[0] | null;
+    };
+  }[];
   contentTags: { tag: { id: number; key: string; label: string } }[];
   author: PersistedAuthorRow;
   likes?: { userId: number; reactionType: string }[];
@@ -418,7 +426,19 @@ const POST_PERSISTENCE_INCLUDE = {
   // fresh from Prisma after a cold start, since the media cache and the
   // post cache are otherwise populated independently.
   media: { select: { position: true, media: true } },
-  taggedPets: { select: { petId: true, pet: { select: { id: true, name: true, profilePicId: true } } } },
+  taggedPets: {
+    select: {
+      petId: true,
+      pet: {
+        select: {
+          id: true,
+          name: true,
+          profilePicId: true,
+          profilePic: true,
+        },
+      },
+    },
+  },
   // Full {id, key, label} per tag (not just the id) so serializePost's
   // content tag cache is warmed in this same query, mirroring the media
   // include's rationale above — a fresh Post load must never need a
@@ -3205,13 +3225,19 @@ export class SocialCoreStore {
   private cachePostRow(row: PersistedPostRow): PostRecord {
     for (const item of row.media) this.cacheMediaRecord(mapMediaRowToRecord(item.media));
     for (const item of row.contentTags) this.contentTagCache.set(item.tag.id, item.tag);
-    if ((row as any).taggedPets) {
-      for (const item of (row as any).taggedPets) {
+    if (row.taggedPets) {
+      for (const item of row.taggedPets) {
         if (item.pet) {
+          let photoUrl: string | null = null;
+          if (item.pet.profilePic) {
+            const profileMedia = mapMediaRowToRecord(item.pet.profilePic);
+            this.cacheMediaRecord(profileMedia);
+            photoUrl = this.mediaPayload(profileMedia.id)?.url ?? null;
+          }
           this.taggedPetCache.set(item.petId, {
             id: item.petId,
             name: item.pet.name,
-            photo: item.pet.profilePicId ? this.mediaPayload(item.pet.profilePicId)?.url ?? null : null,
+            photo: photoUrl,
           });
         }
       }
