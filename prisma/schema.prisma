@@ -286,13 +286,13 @@ model PostTaggedPet {
 }
 
 model PostLike {
-  id           Int      @id @default(autoincrement())
+  id           Int          @id @default(autoincrement())
   postId       Int
   userId       Int
-  reactionType String   @default("LIKE")
-  createdAt    DateTime @default(now())
-  post         Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user         User     @relation("PostLikedBy", fields: [userId], references: [id], onDelete: Cascade)
+  reactionType ReactionType @default(LIKE)
+  createdAt    DateTime     @default(now())
+  post         Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user         User         @relation("PostLikedBy", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([postId, userId])
   @@index([userId, createdAt])
@@ -1108,6 +1108,16 @@ enum PostType {
 enum PostCategory {
   GENERAL
   FUNDRAISING
+}
+
+enum ReactionType {
+  LIKE
+  LOVE
+  AWW
+  HAHA
+  WOW
+  SAD
+  ANGRY
 }
 
 enum PostStatus {

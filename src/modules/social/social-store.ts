@@ -1,5 +1,13 @@
 import { Prisma } from '@prisma/client';
-import type { MediaStatus, PrismaClient } from '@prisma/client';
+import type { MediaStatus, PrismaClient, ReactionType } from '@prisma/client';
+
+const VALID_REACTION_TYPES: ReactionType[] = ['LIKE', 'LOVE', 'AWW', 'HAHA', 'WOW', 'SAD', 'ANGRY'];
+
+function normalizeReactionType(value: unknown): ReactionType {
+  return typeof value === 'string' && (VALID_REACTION_TYPES as string[]).includes(value)
+    ? (value as ReactionType)
+    : 'LIKE';
+}
 import type {
   MediaStorageAdapter,
   StoredMediaDescriptor,
@@ -1060,7 +1068,13 @@ export class SocialCoreStore {
       taggedPetIds: [],
       locationTag: 'Dhaka',
     });
-    this.likePost(1, post2.id);
+    // seed() is synchronous (called from the constructor), but likePost()
+    // is async because it persists via Prisma when mediaPrisma is set —
+    // catch here so a seed-time persistence failure can't surface as an
+    // unhandled promise rejection.
+    this.likePost(1, post2.id).catch((err) => {
+      console.error('[SocialCoreStore.seed] failed to persist seed reaction', err);
+    });
     this.bookmarkPost(1, post2.id);
 
     const comment = this.createCommentRecord({
@@ -2456,14 +2470,15 @@ export class SocialCoreStore {
   ) {
     const post = this.mustGetPost(postId);
     this.ensureCanViewPost(userId, post);
+    const normalizedReaction = normalizeReactionType(reaction);
     const hadLike = this.postLikes.has(keyPair(userId, postId));
-    this.postLikes.set(keyPair(userId, postId), reaction);
-    
+    this.postLikes.set(keyPair(userId, postId), normalizedReaction);
+
     if (this.mediaPrisma) {
       await this.mediaPrisma.postLike.upsert({
         where: { postId_userId: { postId, userId } },
-        update: { reactionType: reaction },
-        create: { postId, userId, reactionType: reaction }
+        update: { reactionType: normalizedReaction },
+        create: { postId, userId, reactionType: normalizedReaction }
       });
     }
 
@@ -2705,11 +2720,11 @@ export class SocialCoreStore {
     const post = this.mustGetPost(postId);
     this.ensureCanViewPost(viewerId, post);
 
-    let reactors: { userId: number; reactionType: string; createdAt: number }[] = [];
+    const reactors: { userId: number; reactionType: string; createdAt: number }[] = [];
     for (const [pair, reaction] of this.postLikes.entries()) {
       if (pair.endsWith(`:${postId}`)) {
         if (!reactionType || reactionType === 'ALL' || reaction === reactionType) {
-          const uId = parseInt(pair.split(':')[0], 10);
+          const uId = parseInt(pair.split(':')[0]!, 10);
           reactors.push({ userId: uId, reactionType: reaction, createdAt: 0 });
         }
       }
@@ -2719,8 +2734,8 @@ export class SocialCoreStore {
     reactors.sort((a, b) => {
       if (a.userId === viewerId) return -1;
       if (b.userId === viewerId) return 1;
-      const aFriend = this.isFollowing(viewerId, a.userId) ? 1 : 0;
-      const bFriend = this.isFollowing(viewerId, b.userId) ? 1 : 0;
+      const aFriend = this.follows.has(keyPair(viewerId, a.userId)) ? 1 : 0;
+      const bFriend = this.follows.has(keyPair(viewerId, b.userId)) ? 1 : 0;
       if (aFriend !== bFriend) return bFriend - aFriend;
       return b.createdAt - a.createdAt;
     });
@@ -2728,15 +2743,16 @@ export class SocialCoreStore {
     let startIdx = 0;
     if (typeof cursor === 'number') startIdx = cursor;
     else if (typeof cursor === 'string') startIdx = parseInt(cursor, 10) || 0;
-    
+
     const sliced = reactors.slice(startIdx, startIdx + limit);
     const items = sliced.map(r => {
       const u = this.mustGetUser(r.userId);
+      const avatarMedia = u.profile.avatarMediaId ? this.mediaPayload(u.profile.avatarMediaId) : null;
       return {
         id: String(r.userId),
         userId: String(r.userId),
         displayName: u.profile.displayName,
-        avatarUrl: u.profile.avatarMedia?.thumbnailUrl || u.profile.avatarMedia?.url,
+        avatarUrl: avatarMedia?.thumbnailUrl || avatarMedia?.url || null,
         reaction: r.reactionType,
       };
     });
@@ -3399,7 +3415,7 @@ export class SocialCoreStore {
 
   private postLikeCount(postId: number): number {
     let count = 0;
-    for (const pair of this.postLikes) {
+    for (const pair of this.postLikes.keys()) {
       if (pair.endsWith(`:${postId}`)) count += 1;
     }
     return count;
@@ -3424,18 +3440,18 @@ export class SocialCoreStore {
       .map(e => e[0]);
 
     // Compute topReactors (friend-first)
-    let reactors: { userId: number; reactionType: string; createdAt: number }[] = [];
+    const reactors: { userId: number; reactionType: string; createdAt: number }[] = [];
     for (const [pair, reaction] of this.postLikes.entries()) {
       if (pair.endsWith(`:${postId}`)) {
-        const uId = parseInt(pair.split(':')[0], 10);
+        const uId = parseInt(pair.split(':')[0]!, 10);
         reactors.push({ userId: uId, reactionType: reaction, createdAt: 0 });
       }
     }
     reactors.sort((a, b) => {
       if (a.userId === viewerId) return -1;
       if (b.userId === viewerId) return 1;
-      const aFriend = this.isFollowing(viewerId, a.userId) ? 1 : 0;
-      const bFriend = this.isFollowing(viewerId, b.userId) ? 1 : 0;
+      const aFriend = this.follows.has(keyPair(viewerId, a.userId)) ? 1 : 0;
+      const bFriend = this.follows.has(keyPair(viewerId, b.userId)) ? 1 : 0;
       if (aFriend !== bFriend) return bFriend - aFriend;
       return b.createdAt - a.createdAt;
     });

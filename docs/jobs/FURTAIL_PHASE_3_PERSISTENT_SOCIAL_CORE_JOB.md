@@ -5,13 +5,188 @@
 **Status**: 🟡 PHASE 3B PERSISTENT POST VERTICAL SLICE COMPLETE (development-verified),
 PLUS a post-implementation hotfix for a cold-start author-hydration regression
 found in production-shaped usage (feed as a viewer who is not the post's
-author) — see "Phase 3B Implementation" and "Hotfix: Author Hydration" below.
+author), PLUS a reaction-runtime repair (2026-08-19) that fixed a stale
+Prisma Client and a Set→Map iteration bug in the in-progress reaction
+feature — see "Phase 3B Implementation", "Hotfix: Author Hydration", and
+"REACTION RUNTIME REPAIR" below.
 Not yet deployed to any shared/staging/production environment; not yet
 code-reviewed by a human; several explicitly out-of-scope gaps remain (listed
-below) as intentional, documented follow-up work.
+below) as intentional, documented follow-up work. Two known-missing backend
+routes (`/api/v1/messages/unread`, `/api/v1/social/discovery/suggestions`)
+are tracked as a deferred follow-up job — see "DEFERRED: MESSAGING +
+DISCOVERY ROUTE RECONCILIATION" below.
 **Blocked By**: nothing currently blocking
 **Estimated Duration**: Phase 3B took one continuous session once the dirty-tree
 isolation blocker was resolved.
+
+---
+
+## REACTION RUNTIME REPAIR (2026-08-19)
+
+### Symptoms reported
+1. `PrismaClientValidationError: Unknown argument reactionType` in `SocialCoreStore.likePost()`.
+2. `TypeError: pair.endsWith is not a function` in `postLikeCount()` → `postCounters()` → `serializePost()` → `listVideosFeed()`.
+3. `404` on `GET /api/v1/messages/unread`.
+4. `404` on `GET /api/v1/social/discovery/suggestions`.
+
+### Context found on branch `feature/persistent-social-core`
+Three files had uncommitted, in-progress reaction-system work (multi-reaction
+support: LIKE/LOVE/AWW/HAHA/WOW/SAD/ANGRY, matching the already-committed Web
+side in `reaction-control.tsx`): `prisma/schema.prisma`,
+`src/modules/social/social-store.ts`, `src/routes/social.routes.ts`. Per the
+repair task's own Step 0, this WIP was snapshotted first on a safety branch
+(`wip/reaction-runtime-before-fix-20260819`, commit `b05e0bc`,
+"wip: preserve reaction runtime state before repair") before any further edit.
+
+### Root cause 1 — stale generated Prisma Client (bug #1)
+The local dev database's `PostLike.reactionType` column already existed
+(applied via an untracked `prisma db push`, not a tracked migration — same
+drift pattern as the earlier Phase 3A taxonomy-table discovery). But
+`npx prisma generate` had not been re-run after the schema edit, so the
+generated client's TypeScript types (and therefore its runtime query
+validator) had no knowledge of the field, producing
+`PrismaClientValidationError: Unknown argument reactionType`. Verified via
+`grep -rl reactionType node_modules/.prisma/client/*.d.ts` returning nothing
+before, and matching after `npx prisma generate`.
+
+### Root cause 2 — Set→Map iteration bug (bug #2)
+`this.postLikes` was migrated from `Set<string>` to `Map<string, string>` to
+carry each user's reaction value, and every call site was updated correctly
+**except** `postLikeCount()`, which still did
+`for (const pair of this.postLikes)` — iterating a `Map` directly yields
+`[key, value]` tuple arrays, and `.endsWith` doesn't exist on an array,
+producing the exact reported crash. Fixed to
+`for (const pair of this.postLikes.keys())`.
+
+### Schema change
+`PostLike.reactionType` was a bare `String @default("LIKE")`, inconsistent
+with this project's schema convention (every other categorical Post field —
+`PostPrivacy`, `PostType`, `PostCategory`, `PostStatus`, etc. — is a Prisma
+enum). Converted to a proper enum using the exact canonical reaction values
+already committed on the Web side (`reaction-control.tsx`'s `ReactionType`):
+
+```prisma
+enum ReactionType {
+  LIKE
+  LOVE
+  AWW
+  HAHA
+  WOW
+  SAD
+  ANGRY
+}
+```
+
+Two migrations were added:
+- `20260819030000_add_post_like_reaction_type_column` — retroactively
+  documents the varchar column that was already live on local dev via
+  untracked `db push` (resolved `--applied` there without re-running the SQL,
+  since it was verified byte-for-byte identical to the live column via
+  direct `psql \d`; on `furtail_app_test`, which never had the column, this
+  migration's SQL ran for real via `migrate deploy`).
+- `20260819031500_convert_post_like_reaction_type_to_enum` — hand-written
+  (the local Postgres role lacks `CREATEDB`, so `prisma migrate dev` could
+  not provision a shadow database; applied via `migrate deploy` instead,
+  which needs no shadow DB) `CREATE TYPE` + `ALTER COLUMN ... USING` cast.
+  All 8 pre-existing `PostLike` rows were `'LIKE'`, so the cast was lossless
+  on both `furtail_app_local` and `furtail_app_test`. No data was dropped
+  or reset; `@@unique([postId, userId])` was untouched throughout.
+
+### Other correctness fixes made in the same pass
+- **Unhandled promise rejection**: `SocialCoreStore.seed()` (synchronous,
+  called from the constructor) fire-and-forgot the now-`async likePost()` —
+  added a `.catch()` so a seed-time persistence failure (there is one, by
+  design: seed users/posts aren't real rows in the Postgres-backed test/dev
+  DB, so the seed reaction's FK upsert always fails there) logs instead of
+  becoming an unhandled rejection.
+- **Reaction input validation**: `likePost()` now normalizes the incoming
+  `reaction` string against the canonical `ReactionType` set, defaulting to
+  `LIKE` for anything unrecognized, instead of passing an arbitrary
+  client-supplied string straight into a Prisma enum column.
+- **`tsc --noEmit` fallout from the enum change**: fixed three
+  pre-existing bugs in the uncommitted reaction WIP that the stricter enum
+  typing surfaced — `this.isFollowing(...)` (a method that doesn't exist on
+  `SocialCoreStore`) replaced with the project's actual convention,
+  `this.follows.has(keyPair(...))`, in both `listPostReactors()` and
+  `postCounters()`; `u.profile.avatarMedia` (not a real field) replaced with
+  `this.mediaPayload(u.profile.avatarMediaId)`, matching `authorPayload()`'s
+  existing convention; two `parseInt(pair.split(':')[0], 10)` call sites
+  given a non-null assertion to satisfy strict array-index typing.
+
+### Verification performed
+- `npx prisma validate`, `npx prisma migrate status` — clean on both DBs.
+- Direct `psql \d "PostLike"` on both `furtail_app_local` and
+  `furtail_app_test` — confirms the `ReactionType` enum column, all
+  indexes/FKs/unique constraint intact, no data loss.
+- `npx tsc --noEmit` — zero errors.
+- New file `tests/reaction-runtime.integration.test.ts` (real HTTP + real
+  Postgres, same fresh-store-as-restart pattern as the Phase 3B/COMMAND03
+  tests): react with LIKE succeeds with no `PrismaClientValidationError`;
+  switching reaction updates the same `PostLike` row (not a second one);
+  removing a reaction deletes both the in-memory and persisted state;
+  reactions survive a simulated restart (fresh `SocialCoreStore` instance,
+  same Postgres data); `GET /api/v1/posts/videos?limit=10&sort=popular`
+  (the exact reported crash path) returns 200; a 3-user/3-reaction-type test
+  proves `reactionSummary` counts, `totalReactionCount` equals the sum of
+  `reactionSummary`, and each viewer sees only their own `viewerReaction`
+  with no double-counting. 6/6 passing.
+- Full existing suite re-run for regressions:
+  `tests/social.integration.test.ts`,
+  `tests/social-privacy-enforcement.integration.test.ts`,
+  `tests/command03-final-integrity.integration.test.ts` — 24/24 passing,
+  no change in behavior.
+
+### Known pre-existing gap (not caused by this repair, not fixed here)
+`listVideosFeed()` never calls `ensureFeedCacheWarm()` the way `listFeed()`
+does, so on a genuinely cold process (before any `/posts/feed` call has
+warmed the in-memory Post cache), `GET /posts/videos` reads from an empty
+in-memory list rather than hydrating from Postgres first. This predates the
+reaction work — it would affect `viewCount`/`shareCount` sorting the same
+way even without reactions — and is out of scope for a reaction-focused
+repair per this task's explicit instructions not to widen scope. Flagged
+here for a future job.
+
+### Commit
+`fix(reactions): align Prisma persistence and reaction counters` on
+`wip/reaction-runtime-before-fix-20260819`, fast-forwarded onto
+`feature/persistent-social-core` (no merge commit, no force push).
+
+---
+
+## DEFERRED: MESSAGING + DISCOVERY ROUTE RECONCILIATION (investigated 2026-08-19, not implemented)
+
+Both reported 404s were investigated separately from the reaction work per
+the repair task's explicit instruction not to conflate them. Neither can be
+fixed with a small, isolated route port — both are missing entire
+subsystems, not just a route registration:
+
+**`GET /api/v1/messages/unread`** (Web caller: `src/lib/api/messages.ts`,
+expects `{ totalUnreadConversations, totalUnreadMessages }`) — the
+`Conversation` / `Message` / `MessageAttachment` / `ConversationRead` Prisma
+models **do not exist at all** in this branch's `prisma/schema.prisma`. The
+full messaging module (`src/modules/messaging/messaging.service.ts`, 885
+lines; `src/routes/messaging.routes.ts`, 319 lines, which is where the
+`/messages/unread` route itself already lives; `src/routes/messaging-admin.routes.ts`;
+3 migrations; 6 integration/unit test files) exists only on branch
+`wip/pre-phase3-snapshot-20260818`, which this branch has not merged.
+
+**`GET /api/v1/social/discovery/suggestions`** (Web caller:
+`src/lib/api/social.ts`, plus a `.../suggestions/:userId/dismiss` sub-route
+and `src/components/social/people-you-may-know-rail.tsx`) — implemented by
+`src/modules/social/people-discovery.service.ts` (706 lines), which also
+exists only on `wip/pre-phase3-snapshot-20260818`. It depends on a
+`buildMediaVariantsPayload` helper (`src/modules/media/media-variants-payload.ts`)
+that likewise does not exist on this branch. `FriendRequest` (a dependency
+it also uses) does already exist here, so this one is *closer* to portable
+than messaging, but still requires bringing over the missing media-variants
+helper and a dedicated route file, plus its own test coverage — not a
+same-session drive-by fix without risking exactly the kind of wholesale,
+unreviewed merge this repair task was explicitly told to avoid.
+
+**Recommendation**: a dedicated follow-up job to reconcile
+`wip/pre-phase3-snapshot-20260818` (which appears to represent a "Phase 3"
+messaging + discovery slice) against `feature/persistent-social-core`,
+scoped and reviewed on its own — not appended to this reaction fix.
 
 ---
 
