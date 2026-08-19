@@ -277,6 +277,7 @@ interface PersistedPostRow {
   taggedPets: { petId: number }[];
   contentTags: { tag: { id: number; key: string; label: string } }[];
   author: PersistedAuthorRow;
+  likes?: { userId: number; reactionType: string }[];
 }
 
 interface PersistedAuthorRow {
@@ -410,6 +411,7 @@ const POST_PERSISTENCE_INCLUDE = {
   // include's rationale above — a fresh Post load must never need a
   // separate round trip to resolve tag labels.
   contentTags: { select: { tag: { select: { id: true, key: true, label: true } } } },
+  likes: { select: { userId: true, reactionType: true } },
   // authorPayload()/serializePost() call the synchronous mustGetUser(),
   // which only ever reads the in-memory `this.users` cache — it has no
   // Prisma fallback of its own (unlike mustGetPost, which now does via
@@ -634,6 +636,16 @@ export interface SocialPostPayload {
   likeCount: number;
   commentCount: number;
   isLikedByMe: boolean;
+  totalReactionCount: number;
+  reactionSummary: Record<string, number>;
+  viewerReaction: string | null;
+  topReactions: string[];
+  topReactors: Array<{
+    id: string;
+    userId: string;
+    displayName: string;
+    reaction: string;
+  }>;
   isBookmarkedByMe: boolean;
   privacy: PostPrivacy;
   backgroundStyle: string | null;
@@ -837,7 +849,7 @@ export class SocialCoreStore {
   private readonly gallery = new Map<number, GalleryItemRecord[]>();
   private readonly follows = new Set<string>();
   private readonly profileLikes = new Set<string>();
-  private readonly postLikes = new Set<string>();
+  private readonly postLikes = new Map<string, string>();
   private readonly commentLikes = new Set<string>();
   private readonly bookmarks = new Set<string>();
   private readonly blocks = new Set<string>();
@@ -2437,19 +2449,29 @@ export class SocialCoreStore {
     return { deleted: true, id: post.id };
   }
 
-  likePost(
+  async likePost(
     userId: number,
     postId: number,
-  ): { likeCount: number; commentCount: number; isLikedByMe: boolean } {
+    reaction: string = 'LIKE'
+  ) {
     const post = this.mustGetPost(postId);
     this.ensureCanViewPost(userId, post);
     const hadLike = this.postLikes.has(keyPair(userId, postId));
-    this.postLikes.add(keyPair(userId, postId));
+    this.postLikes.set(keyPair(userId, postId), reaction);
+    
+    if (this.mediaPrisma) {
+      await this.mediaPrisma.postLike.upsert({
+        where: { postId_userId: { postId, userId } },
+        update: { reactionType: reaction },
+        create: { postId, userId, reactionType: reaction }
+      });
+    }
+
     if (!hadLike) {
       this.emitNotification(post.authorId, {
         type: 'like',
         title: 'Post liked',
-        body: `${this.mustGetUser(userId).profile.displayName} liked your post`,
+        body: `${this.mustGetUser(userId).profile.displayName} reacted to your post`,
         actorId: userId,
         deepLink: `/posts/${postId}`,
         sourceKey: `post-like:${userId}:${postId}`,
@@ -2458,11 +2480,18 @@ export class SocialCoreStore {
     return this.postCounters(userId, postId, true);
   }
 
-  unlikePost(
+  async unlikePost(
     userId: number,
     postId: number,
-  ): { likeCount: number; commentCount: number; isLikedByMe: boolean } {
+  ) {
     this.postLikes.delete(keyPair(userId, postId));
+    
+    if (this.mediaPrisma) {
+      await this.mediaPrisma.postLike.deleteMany({
+        where: { postId, userId }
+      });
+    }
+    
     return this.postCounters(userId, postId, false);
   }
 
@@ -2664,6 +2693,56 @@ export class SocialCoreStore {
       nextCursor: sliced.length === limit ? buildCursor(sliced[sliced.length - 1]!.id) : null,
       hasMore: sliced.length === limit,
     };
+  }
+
+  listPostReactors(
+    viewerId: number,
+    postId: number,
+    reactionType?: string,
+    limit: number = 20,
+    cursor?: unknown
+  ) {
+    const post = this.mustGetPost(postId);
+    this.ensureCanViewPost(viewerId, post);
+
+    let reactors: { userId: number; reactionType: string; createdAt: number }[] = [];
+    for (const [pair, reaction] of this.postLikes.entries()) {
+      if (pair.endsWith(`:${postId}`)) {
+        if (!reactionType || reactionType === 'ALL' || reaction === reactionType) {
+          const uId = parseInt(pair.split(':')[0], 10);
+          reactors.push({ userId: uId, reactionType: reaction, createdAt: 0 });
+        }
+      }
+    }
+
+    // Rank: viewer -> friend -> others
+    reactors.sort((a, b) => {
+      if (a.userId === viewerId) return -1;
+      if (b.userId === viewerId) return 1;
+      const aFriend = this.isFollowing(viewerId, a.userId) ? 1 : 0;
+      const bFriend = this.isFollowing(viewerId, b.userId) ? 1 : 0;
+      if (aFriend !== bFriend) return bFriend - aFriend;
+      return b.createdAt - a.createdAt;
+    });
+
+    let startIdx = 0;
+    if (typeof cursor === 'number') startIdx = cursor;
+    else if (typeof cursor === 'string') startIdx = parseInt(cursor, 10) || 0;
+    
+    const sliced = reactors.slice(startIdx, startIdx + limit);
+    const items = sliced.map(r => {
+      const u = this.mustGetUser(r.userId);
+      return {
+        id: String(r.userId),
+        userId: String(r.userId),
+        displayName: u.profile.displayName,
+        avatarUrl: u.profile.avatarMedia?.thumbnailUrl || u.profile.avatarMedia?.url,
+        reaction: r.reactionType,
+      };
+    });
+
+    const nextCursor = startIdx + limit < reactors.length ? String(startIdx + limit) : undefined;
+    return { items, nextCursor, hasMore: !!nextCursor };
   }
 
   listComments(
@@ -3026,7 +3105,12 @@ export class SocialCoreStore {
   private cachePostRow(row: PersistedPostRow): PostRecord {
     for (const item of row.media) this.cacheMediaRecord(mapMediaRowToRecord(item.media));
     for (const item of row.contentTags) this.contentTagCache.set(item.tag.id, item.tag);
-    // Warms mustGetUser()'s cache with the Post's author — mustGetUser()
+    if (row.likes) {
+      for (const like of row.likes) {
+        this.postLikes.set(keyPair(like.userId, row.id), like.reactionType);
+      }
+    }
+    // Warms mustGetUser()'s cache with the Post's author - mustGetUser()
     // has no Prisma fallback of its own (see POST_PERSISTENCE_INCLUDE's
     // `author` comment), so every path that loads a persisted Post must go
     // through here for serializePost()'s author lookup to succeed after a
@@ -3112,6 +3196,8 @@ export class SocialCoreStore {
   private serializePost(postId: number, viewerId: number): SocialPostPayload {
     const post = this.mustGetPost(postId);
     const author = this.mustGetUser(post.authorId);
+    const counters = this.postCounters(viewerId, post.id, this.postLikes.has(keyPair(viewerId, post.id)));
+
     return {
       id: post.id,
       type: post.type,
@@ -3121,9 +3207,14 @@ export class SocialCoreStore {
       createdAt: post.createdAt.toISOString(),
       author: this.authorPayload(author),
       media: post.mediaIds.map((mediaId) => ({ id: mediaId, media: this.mediaPayload(mediaId) })),
-      likeCount: this.postLikeCount(post.id),
-      commentCount: this.commentCount(post.id),
-      isLikedByMe: this.postLikes.has(keyPair(viewerId, post.id)),
+      likeCount: counters.likeCount,
+      commentCount: counters.commentCount,
+      isLikedByMe: counters.isLikedByMe,
+      totalReactionCount: counters.totalReactionCount,
+      reactionSummary: counters.reactionSummary,
+      viewerReaction: counters.viewerReaction,
+      topReactions: counters.topReactions,
+      topReactors: counters.topReactors,
       isBookmarkedByMe: this.bookmarks.has(keyPair(viewerId, post.id)),
       privacy: post.privacy,
       backgroundStyle: post.backgroundStyle,
@@ -3315,10 +3406,59 @@ export class SocialCoreStore {
   }
 
   private postCounters(viewerId: number, postId: number, isLikedByMe: boolean) {
+    const counts: Record<string, number> = {};
+    let totalReactionCount = 0;
+    let viewerReaction: string | null = null;
+    for (const [pair, reaction] of this.postLikes.entries()) {
+      if (pair.endsWith(`:${postId}`)) {
+        counts[reaction] = (counts[reaction] || 0) + 1;
+        totalReactionCount++;
+        if (pair === `${viewerId}:${postId}`) {
+          viewerReaction = reaction;
+        }
+      }
+    }
+    const topReactions = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(e => e[0]);
+
+    // Compute topReactors (friend-first)
+    let reactors: { userId: number; reactionType: string; createdAt: number }[] = [];
+    for (const [pair, reaction] of this.postLikes.entries()) {
+      if (pair.endsWith(`:${postId}`)) {
+        const uId = parseInt(pair.split(':')[0], 10);
+        reactors.push({ userId: uId, reactionType: reaction, createdAt: 0 });
+      }
+    }
+    reactors.sort((a, b) => {
+      if (a.userId === viewerId) return -1;
+      if (b.userId === viewerId) return 1;
+      const aFriend = this.isFollowing(viewerId, a.userId) ? 1 : 0;
+      const bFriend = this.isFollowing(viewerId, b.userId) ? 1 : 0;
+      if (aFriend !== bFriend) return bFriend - aFriend;
+      return b.createdAt - a.createdAt;
+    });
+
+    const topReactors = reactors.slice(0, 2).map(r => {
+      const u = this.mustGetUser(r.userId);
+      return {
+        id: String(r.userId),
+        userId: String(r.userId),
+        displayName: u.profile.displayName,
+        reaction: r.reactionType,
+      };
+    });
+
     return {
       likeCount: this.postLikeCount(postId),
       commentCount: this.commentCount(postId),
       isLikedByMe,
+      totalReactionCount,
+      reactionSummary: counts,
+      viewerReaction,
+      topReactions,
+      topReactors,
     };
   }
 

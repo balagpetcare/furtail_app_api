@@ -286,12 +286,13 @@ model PostTaggedPet {
 }
 
 model PostLike {
-  id        Int      @id @default(autoincrement())
-  postId    Int
-  userId    Int
-  createdAt DateTime @default(now())
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user      User     @relation("PostLikedBy", fields: [userId], references: [id], onDelete: Cascade)
+  id           Int      @id @default(autoincrement())
+  postId       Int
+  userId       Int
+  reactionType String   @default("LIKE")
+  createdAt    DateTime @default(now())
+  post         Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user         User     @relation("PostLikedBy", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([postId, userId])
   @@index([userId, createdAt])

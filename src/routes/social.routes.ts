@@ -1201,8 +1201,9 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     asyncHandler(async (req, res) => {
       const viewerId = await readUserId(req, store);
       const postId = toPositiveInt(req.params.postId, 'postId');
+      const reaction = req.body?.reaction || 'LIKE';
       try {
-        sendSuccess(res, store.likePost(viewerId, postId), {
+        sendSuccess(res, await store.likePost(viewerId, postId, reaction), {
           requestId: req.requestId,
           correlationId: req.correlationId,
         });
@@ -1218,7 +1219,7 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
     asyncHandler(async (req, res) => {
       const viewerId = await readUserId(req, store);
       const postId = toPositiveInt(req.params.postId, 'postId');
-      sendSuccess(res, store.unlikePost(viewerId, postId), {
+      sendSuccess(res, await store.unlikePost(viewerId, postId), {
         requestId: req.requestId,
         correlationId: req.correlationId,
       });
@@ -1271,6 +1272,24 @@ export function socialRoutes(deps: SocialRoutesDeps): Router {
       const viewerId = await readUserId(req, store);
       const postId = toPositiveInt(req.params.postId, 'postId');
       sendSuccess(res, store.recordView(viewerId, postId), {
+        requestId: req.requestId,
+        correlationId: req.correlationId,
+      });
+    }),
+  );
+
+  router.get(
+    '/api/v1/posts/:postId/reactors',
+    required,
+    asyncHandler(async (req, res) => {
+      const viewerId = await readUserId(req, store);
+      const postId = toPositiveInt(req.params.postId, 'postId');
+      const reaction = req.query.reaction ? String(req.query.reaction) : undefined;
+      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 20;
+      const cursor = req.query.cursor ? String(req.query.cursor) : undefined;
+      
+      const result = store.listPostReactors(viewerId, postId, reaction, limit, cursor);
+      sendSuccess(res, result, {
         requestId: req.requestId,
         correlationId: req.correlationId,
       });
