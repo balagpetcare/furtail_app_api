@@ -1074,12 +1074,29 @@ export class SocialCoreStore {
       taggedPetIds: [],
       locationTag: 'Dhaka',
     });
-    // seed() is synchronous (called from the constructor), but likePost()
-    // is async because it persists via Prisma when mediaPrisma is set —
-    // catch here so a seed-time persistence failure can't surface as an
-    // unhandled promise rejection.
-    this.likePost(1, post2.id).catch((err) => {
-      console.error('[SocialCoreStore.seed] failed to persist seed reaction', err);
+    // Seed data is an in-memory-only fixture — its user/post ids (1, 2, 3,
+    // ...) are demo numbers assigned by this class's own counters, not
+    // real Prisma rows. Proven directly against local dev Postgres: no
+    // User with id 1 exists there, and its Post id 2 belongs to a
+    // completely unrelated real user — the in-memory demo id space and
+    // Prisma's real auto-increment sequence are independent and can
+    // coincidentally collide. Calling the real likePost() here used to
+    // attempt a genuine PostLike Prisma write against those non-existent/
+    // unrelated rows whenever DATABASE_URL was configured, failing FK
+    // validation (P2003 on PostLike_userId_fkey) on every single startup —
+    // caught so it wouldn't crash the process, but the invalid write
+    // attempt itself was the actual bug, not just the unhandled log.
+    // Seed reactions must never reach Prisma: populate the same in-memory
+    // Map and emit the same notification likePost() would, without ever
+    // touching this.mediaPrisma.
+    this.postLikes.set(keyPair(1, post2.id), 'LIKE');
+    this.emitNotification(post2.authorId, {
+      type: 'like',
+      title: 'Post liked',
+      body: `${this.mustGetUser(1).profile.displayName} reacted to your post`,
+      actorId: 1,
+      deepLink: `/posts/${post2.id}`,
+      sourceKey: `post-like:1:${post2.id}`,
     });
     this.bookmarkPost(1, post2.id);
 
